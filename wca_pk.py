@@ -13,7 +13,7 @@ class PlayerRecord:
 
 
 class WCAPKService:
-    """玩家 PK 比较服务"""
+    """选手 PK """
 
     def __init__(self, query: WCAQuery):
         self.query = query
@@ -76,9 +76,7 @@ class WCAPKService:
             return a_text, b_text, 0, 0
 
     def compare(self, kw1: str, kw2: str) -> Tuple[str, Optional[str]]:
-        """对比两位选手
-        返回 (文本, 错误信息)；若有错误 error 不为空
-        """
+        """对比两位选手成绩"""
         p1 = self._resolve_person(kw1)
         p2 = self._resolve_person(kw2)
         if not p1:
@@ -97,7 +95,7 @@ class WCAPKService:
         lines = []
         name1 = r1.person.get("name", kw1)
         name2 = r2.person.get("name", kw2)
-        header = f"{name1} VS {name2}"
+        header = f"{name1} VS {name2}\n"
         lines.append(header)
 
         score_a = 0
@@ -138,7 +136,7 @@ class WCAPKService:
             score_a += a_pt
             score_b += b_pt
             star_a = " (☆)" if a_pt > b_pt else ""
-            star_b = " (☆)" if b_pt > a_pt else ""
+            star_b = " (★)" if b_pt > a_pt else ""
 
             # 平均
             event_format_avg = (
@@ -154,13 +152,19 @@ class WCAPKService:
             score_a += a_avg_pt
             score_b += b_avg_pt
             star_a_avg = " (☆)" if a_avg_pt > b_avg_pt else ""
-            star_b_avg = " (☆)" if b_avg_pt > a_avg_pt else ""
+            star_b_avg = " (★)" if b_avg_pt > a_avg_pt else ""
 
             # 仅当至少一方有成绩才输出
             if (a_pt or b_pt or a_avg_pt or b_avg_pt or a_txt != "-" or b_txt != "-" or a_avg_txt != "-" or b_avg_txt != "-"):
                 lines.append(f"{event_name}  {a_txt}{star_a} || {b_txt}{star_b}")
-                lines.append(f"    {a_avg_txt}{star_a_avg} || {b_avg_txt}{star_b_avg}")
+                indent_spaces = " " * (len(event_name) + 3)
+                lines.append(f"{indent_spaces}  {a_avg_txt}{star_a_avg} || {b_avg_txt}{star_b_avg}")
 
-        lines.append(f"胜利  (★){score_a} : {score_b}")
+        if score_a > score_b:
+            lines.append(f"\n胜利 (⭐){score_a} : {score_b}")
+        elif score_b > score_a:
+            lines.append(f"\n   {score_a} : {score_b} (⭐) 胜利")
+        else:
+            lines.append(f"\n   {score_a} : {score_b} 平局")
         return "\n".join(lines), None
 

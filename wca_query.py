@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 from astrbot.api import logger
 
-# WCA 英文名称到展示名称的映射（仅使用英文名称映射）
+# WCA 英文名称映射为显示名称
 EVENT_NAME_MAP: dict[str, str] = {
     "3x3x3 Cube": "333",
     "2x2x2 Cube": "222",
@@ -56,7 +56,7 @@ def format_wca_time(centiseconds: int, event_format: str = "time") -> str:
         return str(centiseconds)
     
     # 处理时间格式（大多数项目）
-    # 使用纯整数运算，避免浮点精度导致的 9.29 → 9.28 误差
+    # 使用纯整数运算，避免浮点精度导致误差
     total_cs = int(centiseconds)
     minutes = total_cs // 6000              # 6000 cs = 60 s
     sec_cs = total_cs % 6000
@@ -246,7 +246,7 @@ class WCAQuery:
             gender_str = "Male" if str(gender).lower().startswith("m") else "Female"
         basic_parts = [person_id, country or "-", gender_str or "-"]
         header_lines.append(", ".join(basic_parts))
-        header = "\n".join(header_lines) + "\n"
+        header = "\n".join(header_lines) + "\n\n"
         
         single_records = records_data["single_records"]
         average_records = records_data["average_records"]
@@ -331,8 +331,7 @@ class WCAQuery:
             if single_time == "-" and avg_time == "-":
                 continue
             
-            # 格式：项目名称  单次成绩(排名) || 平均成绩(排名)；排名仅当进入前100时显示，优先 WR > CR > NR
-            # 更松散的排版：项目名与成绩间双空格，排名前留空格，分隔符两侧空格
+            # 格式：项目名称  单次成绩(排名) || 平均成绩(排名)；排名仅当进入前200时显示，优先 WR > CR > NR
             line = f"{event_name}  {single_time}"
             if single_rank != "-":
                 line += f" ({single_rank})"
