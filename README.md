@@ -21,6 +21,6 @@ WCA 成绩查询与 PK 插件。基于 WCA 官方 TSV 自动下载并构建本�
 
 ## 效果图
 
-<img src="https://cdn.jsdelivr.net/gh/huizhiLLL/Photo-bed@main/img/PixPin_2025-12-13_20-52-28.png" style="zoom:40%;" >
+<img src="https://cdn.jsdelivr.net/gh/huizhiLLL/Photo-bed@main/img/PixPin_2025-12-13_20-52-28.png" style="zoom:50%;" >
 
-<img src="https://cdn.jsdelivr.net/gh/huizhiLLL/Photo-bed@main/img/PixPin_2025-12-13_20-53-07.png" style="zoom:30%;" >
+<img src="https://cdn.jsdelivr.net/gh/huizhiLLL/Photo-bed@main/img/PixPin_2025-12-13_20-53-07.png" style="zoom:40%;" >
