@@ -15,7 +15,7 @@ class WCAPlugin(Star):
     
     def __init__(self, context: Context):
         super().__init__(context)
-        self.db_path = StarTools.get_data_dir("wca") / "wca_data.db"
+        self.db_path = StarTools.get_data_dir("astrbot_plugin_wca") / "wca_data.db"
         self.wca_updater: WCAUpdater | None = None
         self.wca_query: WCAQuery | None = None
         self.wca_pk: WCAPKService | None = None
@@ -220,7 +220,7 @@ class WCAPlugin(Star):
                 yield event.plain_result("❌ 选手信息不完整，无法查询").use_t2i(False)
                 return
 
-            yield event.plain_result("麦麦收到！正在查询宿敌...").use_t2i(False)
+            yield event.plain_result("收到！正在查询宿敌...").use_t2i(False)
 
             continent, world_count, continent_count, country_count, world_list, continent_list, country_list = (
                 await asyncio.to_thread(self.wca_nemesis.query, person_id)

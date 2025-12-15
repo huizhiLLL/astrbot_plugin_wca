@@ -131,6 +131,26 @@ class WCAQuery:
         self.db_path = Path(db_path)
         if not self.db_path.exists():
             raise FileNotFoundError(f"WCA 数据库文件不存在: {db_path}")
+        # 使用 v2 snake_case 表结构
+        self.persons = "persons"
+        self.events = "events"
+        self.ranks_single = "ranks_single"
+        self.ranks_average = "ranks_average"
+        # 列名（v2）
+        self.col_person_id = "wca_id"
+        self.col_person_name = "name"
+        self.col_person_country = "country_iso2"
+        self.col_person_gender = "gender"
+        self.col_event_id = "id"
+        self.col_event_name = "name"
+        self.col_event_format = "format"
+        self.col_event_rank = "rank"
+        self.col_rank_person = "person_id"
+        self.col_rank_event = "event_id"
+        self.col_rank_best = "best"
+        self.col_rank_world = "world_rank"
+        self.col_rank_continent = "continent_rank"
+        self.col_rank_country = "country_rank"
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接"""
@@ -150,17 +170,24 @@ class WCAQuery:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            p_table = self.persons
+            id_col = self.col_person_id
+            name_col = self.col_person_name
+            country_col = self.col_person_country
+            gender_col = self.col_person_gender
             
             # 如果是 WCA ID 格式（例如：2010ZHAN01），直接查询
             if len(search_input) >= 10 and search_input[:4].isdigit():
                 cursor.execute(
-                    "SELECT * FROM Persons WHERE id = ? COLLATE NOCASE",
+                    f"SELECT *, {id_col} AS id, {country_col} AS countryId, {gender_col} AS gender "
+                    f"FROM {p_table} WHERE {id_col} = ? COLLATE NOCASE",
                     (search_input.upper(),)
                 )
             else:
                 # 按姓名搜索（支持部分匹配）
                 cursor.execute(
-                    "SELECT * FROM Persons WHERE name LIKE ? COLLATE NOCASE",
+                    f"SELECT *, {id_col} AS id, {country_col} AS countryId, {gender_col} AS gender "
+                    f"FROM {p_table} WHERE {name_col} LIKE ? COLLATE NOCASE",
                     (f"%{search_input}%",)
                 )
             
@@ -181,9 +208,30 @@ class WCAQuery:
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+            p_table = self.persons
+            id_col = self.col_person_id
+            country_col = self.col_person_country
+            gender_col = self.col_person_gender
+            events = self.events
+            ranks_single = self.ranks_single
+            ranks_average = self.ranks_average
+            rank_person = self.col_rank_person
+            rank_event = self.col_rank_event
+            rank_best = self.col_rank_best
+            rank_world = self.col_rank_world
+            rank_continent = self.col_rank_continent
+            rank_country = self.col_rank_country
+            event_id = self.col_event_id
+            event_name = self.col_event_name
+            event_format = self.col_event_format
+            event_rank = self.col_event_rank
             
             # 获取选手信息
-            cursor.execute("SELECT * FROM Persons WHERE id = ?", (person_id,))
+            cursor.execute(
+                f"SELECT *, {id_col} AS id, {country_col} AS countryId, {gender_col} AS gender "
+                f"FROM {p_table} WHERE {id_col} = ?",
+                (person_id,),
+            )
             person_row = cursor.fetchone()
             if not person_row:
                 return None
@@ -191,24 +239,50 @@ class WCAQuery:
             person = dict(person_row)
             
             # 获取最佳单次成绩
-            cursor.execute("""
-                SELECT rs.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM RanksSingle rs
-                JOIN Events e ON rs.eventId = e.id
-                WHERE rs.personId = ?
-                ORDER BY e.rank
-            """, (person_id,))
+            cursor.execute(
+                f"""
+                SELECT
+                    rs.*,
+                    rs.{rank_best} AS best,
+                    rs.{rank_world} AS worldRank,
+                    rs.{rank_continent} AS continentRank,
+                    rs.{rank_country} AS countryRank,
+                    rs.{rank_event} AS eventId,
+                    e.{event_id} AS event_id,
+                    e.{event_name} AS event_name,
+                    e.{event_format} AS event_format,
+                    e.{event_rank} AS event_rank
+                FROM {ranks_single} rs
+                JOIN {events} e ON rs.{rank_event} = e.{event_id}
+                WHERE rs.{rank_person} = ?
+                ORDER BY e.{event_rank}
+                """,
+                (person_id,),
+            )
             
             single_records = cursor.fetchall()
             
             # 获取最佳平均成绩
-            cursor.execute("""
-                SELECT ra.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM RanksAverage ra
-                JOIN Events e ON ra.eventId = e.id
-                WHERE ra.personId = ?
-                ORDER BY e.rank
-            """, (person_id,))
+            cursor.execute(
+                f"""
+                SELECT
+                    ra.*,
+                    ra.{rank_best} AS best,
+                    ra.{rank_world} AS worldRank,
+                    ra.{rank_continent} AS continentRank,
+                    ra.{rank_country} AS countryRank,
+                    ra.{rank_event} AS eventId,
+                    e.{event_id} AS event_id,
+                    e.{event_name} AS event_name,
+                    e.{event_format} AS event_format,
+                    e.{event_rank} AS event_rank
+                FROM {ranks_average} ra
+                JOIN {events} e ON ra.{rank_event} = e.{event_id}
+                WHERE ra.{rank_person} = ?
+                ORDER BY e.{event_rank}
+                """,
+                (person_id,),
+            )
             
             average_records = cursor.fetchall()
             

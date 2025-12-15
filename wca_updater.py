@@ -213,18 +213,18 @@ class WCAUpdater:
         logger.info("正在创建索引...")
         try:
             # 为常用查询字段创建索引（存在才建）
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_id ON Persons(id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_personid ON RanksSingle(personId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_eventid ON RanksSingle(eventId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_personid ON RanksAverage(personId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_eventid ON RanksAverage(eventId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_id ON Events(id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_id ON persons(wca_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_personid ON ranks_single(person_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_eventid ON ranks_single(event_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_personid ON ranks_average(person_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_eventid ON ranks_average(event_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_id ON events(id)")
             
             # 为宿敌查询优化：复合索引加速 eventId + best 的查询
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON RanksSingle(eventId, best)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON RanksAverage(eventId, best)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON RanksSingle(eventId, best, personId)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON RanksAverage(eventId, best, personId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON ranks_single(event_id, best)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON ranks_average(event_id, best)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON ranks_single(event_id, best, person_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON ranks_average(event_id, best, person_id)")
             
             conn.commit()
             logger.info("索引创建完成")
@@ -257,11 +257,12 @@ class WCAUpdater:
                 
                 # 需要处理的表（按依赖顺序）
                 required_tables = [
-                    "Countries",   # 先导入国家表，用于洲别映射等
-                    "Events",      # 赛事定义
-                    "Persons",     # 选手信息
-                    "RanksSingle", # 单次排名
-                    "RanksAverage", # 平均排名
+                    "countries",      # 国家表，用于洲别映射等
+                    "events",         # 赛项定义（333、444 等）
+                    "competitions",   # 赛事主表，包含比赛时间地点
+                    "persons",        # 选手信息
+                    "ranks_single",   # 单次排名
+                    "ranks_average",  # 平均排名
                 ]
                 
                 # 处理每个表
@@ -359,7 +360,14 @@ class WCAUpdater:
             cursor = conn.cursor()
             
             # 检查必要的表是否存在
-            required_tables = ["Persons", "Events", "RanksSingle", "RanksAverage", "Countries"]
+            required_tables = [
+                "persons",
+                "events",
+                "ranks_single",
+                "ranks_average",
+                "countries",
+                "competitions",
+            ]
             placeholders = ",".join(["?"] * len(required_tables))
             cursor.execute(
                 f"""

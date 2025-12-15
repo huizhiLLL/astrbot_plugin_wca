@@ -2,6 +2,41 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+# 表/列探测工具，兼容 v1 CamelCase 与 v2 snake_case
+def _table_exists(db_path: Path, name: str) -> bool:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+            (name,),
+        )
+        return c.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def _get_columns(db_path: Path, table: str) -> set[str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        c = conn.cursor()
+        c.execute(f"PRAGMA table_info({table})")
+        return {row[1] for row in c.fetchall()}
+    except sqlite3.Error:
+        return set()
+    finally:
+        conn.close()
+
+
+def _pick_col(db_path: Path, table: str, candidates: list[str], default: Optional[str] = None) -> str:
+    cols = _get_columns(db_path, table)
+    for col in candidates:
+        if col in cols:
+            return col
+    if default is not None:
+        return default
+    raise ValueError(f"未在表 {table} 中找到列 {candidates}")
+
 # 国家到洲映射（ISO-2 -> 大洲）
 # 数据源：WCA 国家列表常规划分；若缺省则记为 "UNKNOWN"
 COUNTRY_TO_CONTINENT: Dict[str, str] = {
@@ -66,6 +101,23 @@ class NemesisService:
         self.db_path = Path(db_path)
         if not self.db_path.exists():
             raise FileNotFoundError(f"WCA 数据库不存在: {db_path}")
+        # 仅支持 v2 snake_case 表结构
+        self.t_persons = "persons"
+        self.t_ranks_single = "ranks_single"
+        self.t_ranks_average = "ranks_average"
+        self.t_countries = "countries"
+
+        # 列映射（v2）
+        self.col_person_id = "wca_id"
+        self.col_person_country = "country_iso2"
+        self.col_person_name = "name"
+
+        self.col_rank_person = "person_id"
+        self.col_rank_event = "event_id"
+        self.col_rank_best = "best"
+
+        self.col_country_id = "id"
+        self.col_country_continent = "continent_id"
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
@@ -73,16 +125,16 @@ class NemesisService:
         try:
             c = conn.cursor()
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON RanksSingle(eventId, best)"
+                f"CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON {self.t_ranks_single}({self.col_rank_event}, {self.col_rank_best})"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON RanksAverage(eventId, best)"
+                f"CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON {self.t_ranks_average}({self.col_rank_event}, {self.col_rank_best})"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON RanksSingle(eventId, best, personId)"
+                f"CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON {self.t_ranks_single}({self.col_rank_event}, {self.col_rank_best}, {self.col_rank_person})"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON RanksAverage(eventId, best, personId)"
+                f"CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON {self.t_ranks_average}({self.col_rank_event}, {self.col_rank_best}, {self.col_rank_person})"
             )
             conn.commit()
         finally:
@@ -98,18 +150,24 @@ class NemesisService:
         conn = self._get_conn()
         try:
             c = conn.cursor()
-            c.execute("SELECT countryId FROM Persons WHERE id = ?", (person_id,))
+            c.execute(
+                f"SELECT {self.col_person_country} AS countryId "
+                f"FROM {self.t_persons} WHERE {self.col_person_id} = ?",
+                (person_id,),
+            )
             row = c.fetchone()
             country = row["countryId"] if row else ""
 
             c.execute(
-                "SELECT eventId, best FROM RanksSingle WHERE personId = ? AND best > 0",
+                f"SELECT {self.col_rank_event} AS eventId, {self.col_rank_best} AS best "
+                f"FROM {self.t_ranks_single} WHERE {self.col_rank_person} = ? AND {self.col_rank_best} > 0",
                 (person_id,),
             )
             single = {r["eventId"]: r["best"] for r in c.fetchall()}
 
             c.execute(
-                "SELECT eventId, best FROM RanksAverage WHERE personId = ? AND best > 0",
+                f"SELECT {self.col_rank_event} AS eventId, {self.col_rank_best} AS best "
+                f"FROM {self.t_ranks_average} WHERE {self.col_rank_person} = ? AND {self.col_rank_best} > 0",
                 (person_id,),
             )
             average = {r["eventId"]: r["best"] for r in c.fetchall()}
@@ -146,19 +204,19 @@ class NemesisService:
             fetch_size = 10000
 
             sql_single = """
-                SELECT personId
-                FROM RanksSingle
-                WHERE eventId = ?
-                  AND best > 0
-                  AND best < ?
+                SELECT {person_col}
+                FROM {table}
+                WHERE {event_col} = ?
+                  AND {best_col} > 0
+                  AND {best_col} < ?
             """
 
             sql_average = """
-                SELECT personId
-                FROM RanksAverage
-                WHERE eventId = ?
-                  AND best > 0
-                  AND best < ?
+                SELECT {person_col}
+                FROM {table}
+                WHERE {event_col} = ?
+                  AND {best_col} > 0
+                  AND {best_col} < ?
             """
 
             for idx, (ev, s_val, a_val) in enumerate(events, start=1):
@@ -172,10 +230,26 @@ class NemesisService:
                             out.add(row[0])
                     return out
 
-                c.execute(sql_single, (ev, s_val))
+                c.execute(
+                    sql_single.format(
+                        person_col=self.col_rank_person,
+                        table=self.t_ranks_single,
+                        event_col=self.col_rank_event,
+                        best_col=self.col_rank_best,
+                    ),
+                    (ev, s_val),
+                )
                 single_set = _fetch_set("single")
 
-                c.execute(sql_average, (ev, a_val))
+                c.execute(
+                    sql_average.format(
+                        person_col=self.col_rank_person,
+                        table=self.t_ranks_average,
+                        event_col=self.col_rank_event,
+                        best_col=self.col_rank_best,
+                    ),
+                    (ev, a_val),
+                )
                 average_set = _fetch_set("average")
 
                 ev_set = single_set & average_set
@@ -200,7 +274,9 @@ class NemesisService:
             c = conn.cursor()
             placeholders = ",".join(["?"] * len(ids))
             c.execute(
-                f"SELECT id, name, countryId FROM Persons WHERE id IN ({placeholders})",
+                f"SELECT {self.col_person_id} AS id, {self.col_person_name} AS name, "
+                f"{self.col_person_country} AS countryId "
+                f"FROM {self.t_persons} WHERE {self.col_person_id} IN ({placeholders})",
                 tuple(ids),
             )
             return [dict(r) for r in c.fetchall()]
@@ -215,7 +291,8 @@ class NemesisService:
             c = conn.cursor()
             placeholders = ",".join(["?"] * len(country_ids))
             c.execute(
-                f"SELECT id, continentId FROM Countries WHERE id IN ({placeholders})",
+                f"SELECT {self.col_country_id} AS id, {self.col_country_continent} AS continentId "
+                f"FROM {self.t_countries} WHERE {self.col_country_id} IN ({placeholders})",
                 tuple(country_ids),
             )
             return {row["id"]: row["continentId"] for row in c.fetchall()}
