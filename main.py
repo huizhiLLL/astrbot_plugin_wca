@@ -1,25 +1,25 @@
 import asyncio
-from pathlib import Path
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api import logger
 
 from .wca_query import WCAQuery
 from .wca_updater import WCAUpdater
 from .wca_pk import WCAPKService
+from .wca_nemesis import NemesisService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.0")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.1")
 class WCAPlugin(Star):
     """WCA 成绩查询插件"""
     
     def __init__(self, context: Context):
         super().__init__(context)
-        self.plugin_dir = Path(__file__).parent
-        self.db_path = self.plugin_dir / "wca_data.db"
+        self.db_path = StarTools.get_data_dir("wca") / "wca_data.db"
         self.wca_updater: WCAUpdater | None = None
         self.wca_query: WCAQuery | None = None
         self.wca_pk: WCAPKService | None = None
+        self.wca_nemesis: NemesisService | None = None
         self._update_task: asyncio.Task | None = None
     
     async def initialize(self):
@@ -48,6 +48,7 @@ class WCAPlugin(Star):
             if self.db_path.exists():
                 self.wca_query = WCAQuery(self.db_path)
                 self.wca_pk = WCAPKService(self.wca_query)
+                self.wca_nemesis = NemesisService(self.db_path)
                 logger.info("WCA 插件初始化完成")
                 # 启动定时更新任务（每 12 小时检查一次）
                 self._update_task = asyncio.create_task(self._periodic_update())
@@ -160,6 +161,8 @@ class WCAPlugin(Star):
                 # 重新初始化查询器
                 if self.db_path.exists():
                     self.wca_query = WCAQuery(self.db_path)
+                    self.wca_pk = WCAPKService(self.wca_query)
+                    self.wca_nemesis = NemesisService(self.db_path)
                     yield event.plain_result("✅ WCA 数据库更新成功").use_t2i(False)
                 else:
                     yield event.plain_result("❌ 数据库更新失败：文件不存在").use_t2i(False)
@@ -169,6 +172,93 @@ class WCAPlugin(Star):
         except Exception as e:
             logger.error(f"WCA 数据库更新异常: {e}")
             yield event.plain_result(f"❌ 更新出错: {str(e)}").use_t2i(False)
+
+    @filter.command("宿敌")
+    async def wca_nemesis_command(self, event: AstrMessageEvent):
+        if not self.wca_query or not self.wca_nemesis:
+            yield event.plain_result("❌ WCA 数据库未初始化，请稍后重试").use_t2i(False)
+            return
+
+        message_str = event.message_str.strip()
+        parts = message_str.split(maxsplit=1)
+        if len(parts) < 2:
+            yield event.plain_result(
+                "❌ 请提供 WCA ID 或姓名\n"
+                "用法: /宿敌 <WCA ID 或姓名>\n"
+                "示例: /宿敌 2010ZHAN01\n"
+            ).use_t2i(False)
+            return
+
+        search_input = parts[1].strip()
+
+        try:
+            persons = self.wca_query.search_person(search_input)
+            if not persons:
+                yield event.plain_result(
+                    f"❌ 未找到匹配的选手: {search_input}\n"
+                    "提示：可以使用 WCA ID（如：2010ZHAN01）或姓名进行搜索"
+                ).use_t2i(False)
+                return
+
+            if len(persons) > 1:
+                lines = ["❌ 找到多个匹配的选手，请使用 WCA ID 查询：\n"]
+                for i, person in enumerate(persons[:10], 1):
+                    person_id = person.get("id", "未知")
+                    person_name = person.get("name", "未知")
+                    country = person.get("countryId", "")
+                    country_str = f" [{country}]" if country else ""
+                    lines.append(f"{i}. {person_name} ({person_id}){country_str}")
+
+                if len(persons) > 10:
+                    lines.append(f"\n... 还有 {len(persons) - 10} 个结果未显示")
+                lines.append("\n使用方法: /wca宿敌 <WCA ID>")
+                yield event.plain_result("\n".join(lines)).use_t2i(False)
+                return
+
+            person_id = persons[0].get("id", "")
+            if not person_id:
+                yield event.plain_result("❌ 选手信息不完整，无法查询").use_t2i(False)
+                return
+
+            yield event.plain_result("麦麦收到！正在查询宿敌...").use_t2i(False)
+
+            continent, world_count, continent_count, country_count, world_list, continent_list, country_list = (
+                await asyncio.to_thread(self.wca_nemesis.query, person_id)
+            )
+
+            if world_count == 0:
+                yield event.plain_result(
+                    f"✅ 未找到宿敌"
+                ).use_t2i(False)
+                return
+
+            person_name = persons[0].get("name", "")
+            title = f"选手{person_name}({person_id})的宿敌结果为："
+            summary = f"世界：{world_count}人，洲：{continent_count}人，地区：{country_count}人"
+
+            def _fmt_people(people: list[dict[str, str]]) -> str:
+                lines: list[str] = []
+                for p in people:
+                    pid = p.get("id", "")
+                    name = p.get("name", "")
+                    ctry = p.get("countryId", "")
+                    ctry_str = f" [{ctry}]" if ctry else ""
+                    lines.append(f"- {name} ({pid}){ctry_str}")
+                return "\n".join(lines)
+
+            details: list[str] = []
+            if 0 < world_count <= 5:
+                details.append("世界：\n" + _fmt_people(world_list))
+            if 0 < continent_count <= 5:
+                details.append("洲：\n" + _fmt_people(continent_list))
+            if 0 < country_count <= 5:
+                details.append("地区：\n" + _fmt_people(country_list))
+
+            text = "\n".join([title, summary] + (["", "\n\n".join(details)] if details else []))
+            yield event.plain_result(text).use_t2i(False)
+
+        except Exception as e:
+            yield event.plain_result(f"❌ 执行出错: {str(e)}").use_t2i(False)
 
     @filter.command("wcapk")
     async def wca_pk_command(self, event: AstrMessageEvent):

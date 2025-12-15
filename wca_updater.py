@@ -115,6 +115,122 @@ class WCAUpdater:
             temp_path.unlink(missing_ok=True)
             return None
     
+    def _find_tsv_file(self, temp_dir_path: Path, table: str) -> Path | None:
+        """在解压目录中查找指定表的 TSV 文件（递归）
+        
+        兼容官方导出命名：WCA_export_{Table}.tsv
+        也兼容纯 {Table}.tsv。
+        
+        Args:
+            temp_dir_path: 临时目录路径
+            table: 表名
+        
+        Returns:
+            找到的 TSV 文件路径，如果未找到则返回 None
+        """
+        patterns = [
+            f"{table}.tsv",
+            f"WCA_export_{table}.tsv",
+            f"{table}.TSV",
+            f"WCA_export_{table}.TSV",
+        ]
+        for pattern in patterns:
+            for path in temp_dir_path.rglob(pattern):
+                if path.is_file():
+                    return path
+        return None
+    
+    def _process_single_table(self, conn: sqlite3.Connection, table_name: str, tsv_file: Path) -> bool:
+        """处理单个 TSV 表文件并写入数据库
+        
+        Args:
+            conn: SQLite 数据库连接
+            table_name: 表名
+            tsv_file: TSV 文件路径
+        
+        Returns:
+            是否处理成功
+        """
+        try:
+            logger.info(f"正在处理表: {table_name}")
+            
+            chunk_count = 0
+            total_rows = 0
+            is_first_chunk = True
+            
+            # 分批读取并插入数据
+            for chunk in pd.read_csv(
+                tsv_file,
+                sep='\t',
+                chunksize=CHUNKSIZE,
+                encoding='utf-8',
+                low_memory=False
+            ):
+                chunk_count += 1
+                chunk_rows = len(chunk)
+                total_rows += chunk_rows
+                
+                # 第一次读取时创建表，后续追加数据
+                if is_first_chunk:
+                    chunk.to_sql(
+                        table_name,
+                        conn,
+                        if_exists='replace',
+                        index=False
+                    )
+                    is_first_chunk = False
+                else:
+                    chunk.to_sql(
+                        table_name,
+                        conn,
+                        if_exists='append',
+                        index=False
+                    )
+                
+                # 每处理一定数量的块就提交一次
+                if chunk_count % 10 == 0:
+                    conn.commit()
+                    logger.info(
+                        f"  表 {table_name}: 已处理 {chunk_count} 个数据块，"
+                        f"共 {total_rows} 行"
+                    )
+            
+            # 最终提交
+            conn.commit()
+            logger.info(f"表 {table_name} 处理完成: 共 {total_rows} 行数据")
+            return True
+            
+        except Exception as e:
+            logger.error(f"处理表 {table_name} 时出错: {e}")
+            return False
+    
+    def _create_database_indexes(self, conn: sqlite3.Connection) -> None:
+        """为数据库创建索引以提高查询性能
+        
+        Args:
+            conn: SQLite 数据库连接
+        """
+        logger.info("正在创建索引...")
+        try:
+            # 为常用查询字段创建索引（存在才建）
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_id ON Persons(id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_personid ON RanksSingle(personId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_eventid ON RanksSingle(eventId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_personid ON RanksAverage(personId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_eventid ON RanksAverage(eventId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_id ON Events(id)")
+            
+            # 为宿敌查询优化：复合索引加速 eventId + best 的查询
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON RanksSingle(eventId, best)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON RanksAverage(eventId, best)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON RanksSingle(eventId, best, personId)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON RanksAverage(eventId, best, personId)")
+            
+            conn.commit()
+            logger.info("索引创建完成")
+        except Exception as e:
+            logger.warning(f"创建索引时出错（可忽略）: {e}")
+    
     def process_tsv_to_sqlite(self, tsv_archive_path: Path) -> bool:
         """处理 TSV 文件并转换为 SQLite 数据库
         
@@ -146,104 +262,21 @@ class WCAUpdater:
                     "RanksSingle", # 单次排名
                     "RanksAverage", # 平均排名
                 ]
-
-                def find_tsv_file(table: str) -> Path | None:
-                    """在解压目录中查找指定表的 TSV 文件（递归）
-                    
-                    兼容官方导出命名：WCA_export_{Table}.tsv
-                    也兼容纯 {Table}.tsv。
-                    """
-                    patterns = [
-                        f"{table}.tsv",
-                        f"WCA_export_{table}.tsv",
-                        f"{table}.TSV",
-                        f"WCA_export_{table}.TSV",
-                    ]
-                    for pattern in patterns:
-                        for path in temp_dir_path.rglob(pattern):
-                            if path.is_file():
-                                return path
-                    return None
                 
                 # 处理每个表
                 for table_name in required_tables:
-                    tsv_file = find_tsv_file(table_name)
+                    tsv_file = self._find_tsv_file(temp_dir_path, table_name)
                     
                     if not tsv_file:
                         logger.warning(f"TSV 文件不存在: {table_name}.tsv")
                         continue
                     
-                    logger.info(f"正在处理表: {table_name}")
-                    
-                    # 使用 pandas 分批读取 TSV 文件
-                    chunk_count = 0
-                    total_rows = 0
-                    
-                    try:
-                        # 分批读取并插入数据
-                        is_first_chunk = True
-                        for chunk in pd.read_csv(
-                            tsv_file,
-                            sep='\t',
-                            chunksize=CHUNKSIZE,
-                            encoding='utf-8',
-                            low_memory=False
-                        ):
-                            chunk_count += 1
-                            chunk_rows = len(chunk)
-                            total_rows += chunk_rows
-                            
-                            # 第一次读取时创建表，后续追加数据
-                            if is_first_chunk:
-                                chunk.to_sql(
-                                    table_name,
-                                    conn,
-                                    if_exists='replace',
-                                    index=False
-                                )
-                                is_first_chunk = False
-                            else:
-                                chunk.to_sql(
-                                    table_name,
-                                    conn,
-                                    if_exists='append',
-                                    index=False
-                                )
-                            
-                            # 每处理一定数量的块就提交一次
-                            if chunk_count % 10 == 0:
-                                conn.commit()
-                                logger.info(
-                                    f"  表 {table_name}: 已处理 {chunk_count} 个数据块，"
-                                    f"共 {total_rows} 行"
-                                )
-                        
-                        # 最终提交
-                        conn.commit()
-                        logger.info(
-                            f"表 {table_name} 处理完成: 共 {total_rows} 行数据"
-                        )
-                        
-                    except Exception as e:
-                        logger.error(f"处理表 {table_name} 时出错: {e}")
-                        conn.rollback()
+                    if not self._process_single_table(conn, table_name, tsv_file):
                         conn.close()
                         return False
                 
                 # 创建索引以提高查询性能
-                logger.info("正在创建索引...")
-                try:
-                    # 为常用查询字段创建索引（存在才建）
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_id ON Persons(id)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_personid ON RanksSingle(personId)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_rankssingle_eventid ON RanksSingle(eventId)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_personid ON RanksAverage(personId)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_ranksaverage_eventid ON RanksAverage(eventId)")
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_id ON Events(id)")
-                    conn.commit()
-                    logger.info("索引创建完成")
-                except Exception as e:
-                    logger.warning(f"创建索引时出错（可忽略）: {e}")
+                self._create_database_indexes(conn)
                 
                 conn.close()
                 logger.info("TSV 文件处理完成，SQLite 数据库已创建")
@@ -287,8 +320,8 @@ class WCAUpdater:
             return False
         
         try:
-            # 处理 TSV 文件并转换为 SQLite 数据库
-            success = self.process_tsv_to_sqlite(tsv_archive_path)
+            # 处理 TSV 文件并转换为 SQLite 数据库（在线程池中执行以避免阻塞事件循环）
+            success = await asyncio.to_thread(self.process_tsv_to_sqlite, tsv_archive_path)
             
             if success:
                 # 验证数据库文件
