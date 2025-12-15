@@ -257,8 +257,9 @@ class WCAUpdater:
                 
                 # 需要处理的表（按依赖顺序）
                 required_tables = [
-                    "Events",      # 先处理 Events，因为其他表可能依赖它
-                    "Persons",     # 然后处理 Persons
+                    "Countries",   # 先导入国家表，用于洲别映射等
+                    "Events",      # 赛事定义
+                    "Persons",     # 选手信息
                     "RanksSingle", # 单次排名
                     "RanksAverage", # 平均排名
                 ]
@@ -297,10 +298,11 @@ class WCAUpdater:
         """
         # 检查数据库是否已存在
         if self.db_path.exists() and not force:
-            logger.info(f"WCA 数据库已存在: {self.db_path}")
-            # 可以在这里添加检查更新日期的逻辑
-            # 暂时直接返回 True，表示数据库可用
-            return True
+            # 老版本数据库可能缺少 Countries 表，验证通过才跳过下载
+            if self.verify_database():
+                logger.info(f"WCA 数据库已存在: {self.db_path}")
+                return True
+            logger.info("现有 WCA 数据库缺少必要表，准备重新下载并构建")
         
         # 获取导出信息
         export_info = await self.get_export_info()
@@ -357,11 +359,15 @@ class WCAUpdater:
             cursor = conn.cursor()
             
             # 检查必要的表是否存在
-            required_tables = ["Persons", "Events", "RanksSingle", "RanksAverage"]
-            cursor.execute("""
+            required_tables = ["Persons", "Events", "RanksSingle", "RanksAverage", "Countries"]
+            placeholders = ",".join(["?"] * len(required_tables))
+            cursor.execute(
+                f"""
                 SELECT name FROM sqlite_master 
-                WHERE type='table' AND name IN (?, ?, ?, ?)
-            """, required_tables)
+                WHERE type='table' AND name IN ({placeholders})
+                """,
+                required_tables,
+            )
             
             existing_tables = [row[0] for row in cursor.fetchall()]
             

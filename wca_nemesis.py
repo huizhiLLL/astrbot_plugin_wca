@@ -1,5 +1,4 @@
 import sqlite3
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -142,7 +141,6 @@ class NemesisService:
         conn = self._get_conn()
         try:
             c = conn.cursor()
-            start_ts = time.monotonic()
             candidates: Set[str] | None = None
             total = len(events)
             fetch_size = 10000
@@ -209,16 +207,43 @@ class NemesisService:
         finally:
             conn.close()
 
+    def _get_country_continent_map(self, country_ids: Set[str]) -> Dict[str, str]:
+        if not country_ids:
+            return {}
+        conn = self._get_conn()
+        try:
+            c = conn.cursor()
+            placeholders = ",".join(["?"] * len(country_ids))
+            c.execute(
+                f"SELECT id, continentId FROM Countries WHERE id IN ({placeholders})",
+                tuple(country_ids),
+            )
+            return {row["id"]: row["continentId"] for row in c.fetchall()}
+        except sqlite3.Error:
+            return {}
+        finally:
+            conn.close()
+
     def query(self, person_id: str) -> Tuple[str, int, int, int, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         """返回 (continent, world_count, continent_count, country_count, world_list, continent_list, country_list)"""
         single, average, country = self._get_target_records(person_id)
         better_ids = self._filter_better_players(single, average)
         people = self._get_people(better_ids)
 
-        target_continent = COUNTRY_TO_CONTINENT.get(country, "UNKNOWN")
+        country_ids = {p.get("countryId") for p in people if p.get("countryId")}
+        if country:
+            country_ids.add(country)
+        country_continent = self._get_country_continent_map(country_ids)
+
+        target_continent = country_continent.get(country) or COUNTRY_TO_CONTINENT.get(country, "UNKNOWN")
 
         world_list = people
-        continent_list = [p for p in people if COUNTRY_TO_CONTINENT.get(p.get("countryId"), "UNKNOWN") == target_continent]
+        continent_list = [
+            p
+            for p in people
+            if (country_continent.get(p.get("countryId")) or COUNTRY_TO_CONTINENT.get(p.get("countryId"), "UNKNOWN"))
+            == target_continent
+        ]
         country_list = [p for p in people if p.get("countryId") == country]
 
         return (
