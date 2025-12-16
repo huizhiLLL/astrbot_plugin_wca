@@ -61,7 +61,7 @@ class WCAPlugin(Star):
     @filter.command("wca")
     async def wca_command(self, event: AstrMessageEvent):
         """个人官方最佳记录查询：\n
-        /wca <WCA ID 或姓名>
+        /wca <WCA ID 或姓名>\n
         /wca 2010ZHAN01 /wca 张安宇
         """
         if not self.wca_query:
@@ -171,6 +171,10 @@ class WCAPlugin(Star):
 
     @filter.command("宿敌")
     async def wca_nemesis_command(self, event: AstrMessageEvent):
+        """宿敌查询：\n
+        /宿敌 <WCA ID 或姓名>\n
+        /宿敌 2010ZHAN01 /宿敌 张安宇
+        """
         if not self.wca_query or not self.wca_nemesis:
             yield event.plain_result("❌ WCA 数据库未初始化，请稍后重试").use_t2i(False)
             return
@@ -259,7 +263,7 @@ class WCAPlugin(Star):
     @filter.command("wcapk")
     async def wca_pk_command(self, event: AstrMessageEvent):
         """wcapk:\n
-        /wcapk <选手1> <选手2>
+        /wcapk <选手1> <选手2>\n
         填写WCA ID 或姓名（姓名需唯一匹配）
         """
         if not self.wca_pk:
