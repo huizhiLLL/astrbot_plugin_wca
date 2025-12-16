@@ -94,7 +94,10 @@ class NemesisService:
         return conn
 
     def _get_target_records(self, person_id: str) -> Tuple[Dict[str, int], Dict[str, int], str]:
-        """返回目标选手的最佳单次/平均映射，以及国家代码"""
+        """返回目标选手的最佳单次/平均映射，以及国家代码
+
+        不再强制要求同一项目同时存在单次和平均，后续过滤时按各自存在的指标逐项比较。
+        """
         conn = self._get_conn()
         try:
             c = conn.cursor()
@@ -114,10 +117,6 @@ class NemesisService:
             )
             average = {r["eventId"]: r["best"] for r in c.fetchall()}
 
-            # 只保留同时有单次和平均的项目（题意“单次平均成绩都比…好”）
-            common_events = set(single.keys()) & set(average.keys())
-            single = {k: v for k, v in single.items() if k in common_events}
-            average = {k: v for k, v in average.items() if k in common_events}
             return single, average, country
         finally:
             conn.close()
@@ -125,18 +124,28 @@ class NemesisService:
     def _filter_better_players(
         self, single: Dict[str, int], average: Dict[str, int]
     ) -> Set[str]:
-        """找出在所有这些项目的单次和平均都优于目标的 personId"""
-        if not single or not average:
+        """找出在所有这些项目的单次/平均均优于目标的 personId
+
+        逻辑放宽：每个项目只比对目标实际拥有的指标。
+        - 若目标仅有单次，则要求候选单次更好；
+        - 若目标仅有平均，则要求候选平均更好；
+        - 若同时有单次与平均，则两者都需更好。
+        """
+        if not single and not average:
             return set()
 
-        # 仅保留两侧同时存在的项目
-        events = [(ev, single[ev], average[ev]) for ev in single.keys() if ev in average]
-        if not events:
-            return set()
-
-        # 为了输出真实进度，这里改为逐项目查询并在 Python 中做交集。
-        # 由于交集会快速收缩候选集合，通常不会比单条巨型 SQL 更慢。
-        events.sort(key=lambda x: (x[1], x[2]))
+        # 统一收集所有出现的项目，逐项目做交集过滤
+        events: list[Tuple[str, int | None, int | None]] = []
+        all_events = set(single.keys()) | set(average.keys())
+        for ev in all_events:
+            events.append((ev, single.get(ev), average.get(ev)))
+        # 为了收敛更快，按数值较小的指标排序（None 视为大值）
+        def _sort_key(item: Tuple[str, int | None, int | None]):
+            _, s_val, a_val = item
+            s_sort = s_val if s_val is not None else 10**9
+            a_sort = a_val if a_val is not None else 10**9
+            return (min(s_sort, a_sort), s_sort, a_sort)
+        events.sort(key=_sort_key)
 
         conn = self._get_conn()
         try:
@@ -161,24 +170,34 @@ class NemesisService:
                   AND best < ?
             """
 
+            def _fetch_set() -> Set[str]:
+                out: Set[str] = set()
+                while True:
+                    rows = c.fetchmany(fetch_size)
+                    if not rows:
+                        break
+                    for row in rows:
+                        out.add(row[0])
+                return out
+
             for idx, (ev, s_val, a_val) in enumerate(events, start=1):
-                def _fetch_set(phase: str) -> Set[str]:
-                    out: Set[str] = set()
-                    while True:
-                        rows = c.fetchmany(fetch_size)
-                        if not rows:
-                            break
-                        for row in rows:
-                            out.add(row[0])
-                    return out
+                if s_val is None and a_val is None:
+                    continue  # 没有任何指标可比
 
-                c.execute(sql_single, (ev, s_val))
-                single_set = _fetch_set("single")
+                ev_set: Set[str] | None = None
 
-                c.execute(sql_average, (ev, a_val))
-                average_set = _fetch_set("average")
+                if s_val is not None:
+                    c.execute(sql_single, (ev, s_val))
+                    single_set = _fetch_set()
+                    ev_set = single_set if ev_set is None else ev_set & single_set
 
-                ev_set = single_set & average_set
+                if a_val is not None:
+                    c.execute(sql_average, (ev, a_val))
+                    average_set = _fetch_set()
+                    ev_set = average_set if ev_set is None else ev_set & average_set
+
+                if ev_set is None:
+                    continue
 
                 if candidates is None:
                     candidates = ev_set
