@@ -9,7 +9,7 @@ from .wca_pk import WCAPKService
 from .wca_nemesis import NemesisService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.1")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.3")
 class WCAPlugin(Star):
     """WCA 成绩查询插件"""
     
@@ -60,12 +60,9 @@ class WCAPlugin(Star):
     
     @filter.command("wca")
     async def wca_command(self, event: AstrMessageEvent):
-        """WCA 成绩查询命令
-        
-        用法:
+        """个人官方最佳记录查询：\n
         /wca <WCA ID 或姓名>
-        示例: /wca 2010ZHAN01
-        示例: /wca 张安宇
+        /wca 2010ZHAN01 /wca 张安宇
         """
         if not self.wca_query:
             yield event.plain_result(
@@ -144,9 +141,8 @@ class WCAPlugin(Star):
     
     @filter.command("wca更新")
     async def wca_update_command(self, event: AstrMessageEvent):
-        """更新 WCA 数据库
-        
-        用法: /wca更新
+        """手动更新 WCA 数据库：\n
+        /wca更新
         """
         if not self.wca_updater:
             yield event.plain_result("❌ WCA 更新器未初始化").use_t2i(False)
@@ -262,11 +258,9 @@ class WCAPlugin(Star):
 
     @filter.command("wcapk")
     async def wca_pk_command(self, event: AstrMessageEvent):
-        """WCA PK 对比
-        
-        用法:
+        """wcapk:\n
         /wcapk <选手1> <选手2>
-        选手可为 WCA ID 或姓名（姓名需唯一匹配）
+        填写WCA ID 或姓名（姓名需唯一匹配）
         """
         if not self.wca_pk:
             yield event.plain_result("❌ WCA 数据库未初始化，请稍后重试").use_t2i(False)
