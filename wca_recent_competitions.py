@@ -1,3 +1,4 @@
+import json
 import aiohttp
 from datetime import datetime, date
 from typing import List, Dict, Any
@@ -36,16 +37,36 @@ class RecentCompetitionsService:
                         logger.error(f"API 请求失败，状态码: {response.status}")
                         return []
                     
-                    data = await response.json()
+                    # 手动解析 JSON，避免 mimetype 检查问题
+                    text = await response.text()
+                    try:
+                        data = json.loads(text)
+                    except ValueError as e:  # json.JSONDecodeError 是 ValueError 的子类
+                        logger.error(f"JSON 解析失败: {e}, 响应内容: {text[:200]}")
+                        return []
+                    
+                    # 确保 data 是字典类型
+                    if not isinstance(data, dict):
+                        logger.error("API 返回的数据格式错误，期望字典")
+                        return []
                     
                     if data.get("status") != 0:
                         logger.error(f"API 返回错误: {data.get('message', 'Unknown error')}")
                         return []
                     
-                    return data.get("data", [])
+                    competitions_data = data.get("data", [])
+                    # 确保返回的是列表
+                    if not isinstance(competitions_data, list):
+                        logger.error("API 返回的 data 格式错误，期望列表")
+                        return []
+                    
+                    return competitions_data
                     
         except aiohttp.ClientError as e:
             logger.error(f"API 请求异常: {e}")
+            return []
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 解析失败: {e}")
             return []
         except Exception as e:
             logger.error(f"获取比赛列表失败: {e}")
@@ -54,25 +75,55 @@ class RecentCompetitionsService:
     def _filter_china_competitions(self, competitions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """过滤出中国的比赛
         
-        Args:
-            competitions: 比赛列表
-        
-        Returns:
-            中国的比赛列表
+        优先使用 region 字段；若缺失，则通过省份/城市中文名或常见省份英文名判断。
         """
-        china_competitions = []
+        china_competitions: List[Dict[str, Any]] = []
+        china_keywords = {
+            "北京", "上海", "天津", "重庆", "广东", "江苏", "浙江", "山东", "河南", "四川", "湖北", "湖南",
+            "河北", "安徽", "福建", "江西", "陕西", "山西", "辽宁", "黑龙江", "吉林", "云南", "广西", "贵州",
+            "新疆", "内蒙古", "西藏", "海南", "宁夏", "青海", "甘肃", "香港", "澳门",
+            "Guangdong", "Beijing", "Shanghai", "Jiangsu", "Zhejiang", "Shandong",
+        }
+        
+        import re
+        chinese_char_re = re.compile(r"[\u4e00-\u9fff]")
         
         for comp in competitions:
+            if not isinstance(comp, dict):
+                continue
             locations = comp.get("locations", [])
+            if not isinstance(locations, list) or not locations:
+                continue
             
-            # 检查所有地点是否都在中国
-            # 使用 region 字段判断，更准确
-            is_china_competition = all(
-                location.get("region") == "China" or location.get("region") == "中国"
-                for location in locations
-            )
+            is_china = False
+            for loc in locations:
+                if not isinstance(loc, dict):
+                    continue
+                region = loc.get("region")
+                if region in ("China", "中国"):
+                    is_china = True
+                    break
+                
+                # 省份/城市信息
+                province = loc.get("province", "")
+                city = loc.get("city", "")
+                
+                # 任意字段包含中文即认为是中国
+                if (isinstance(province, str) and chinese_char_re.search(province)) or (
+                    isinstance(city, str) and chinese_char_re.search(city)
+                ):
+                    is_china = True
+                    break
+                
+                # 英文省份匹配常见关键词
+                if isinstance(province, str) and any(k in province for k in china_keywords):
+                    is_china = True
+                    break
+                if isinstance(city, str) and any(k in city for k in china_keywords):
+                    is_china = True
+                    break
             
-            if is_china_competition and locations:
+            if is_china:
                 china_competitions.append(comp)
         
         return china_competitions
@@ -111,9 +162,41 @@ class RecentCompetitionsService:
             # 过滤出中国的比赛
             china_competitions = self._filter_china_competitions(competitions)
             
+            # 过滤出今天及以后的比赛（正在进行的和即将举办的）
+            today_date = datetime.now().date()
+            upcoming_competitions = []
+            for comp in china_competitions:
+                if not isinstance(comp, dict):
+                    continue
+                
+                date_info = comp.get("date", {})
+                if isinstance(date_info, dict):
+                    # 获取开始/结束时间戳
+                    start_ts = date_info.get("from", 0) or 0
+                    end_ts = date_info.get("to", start_ts) or start_ts
+                    
+                    # 转为日期，若转换失败则跳过
+                    try:
+                        end_date = datetime.fromtimestamp(end_ts).date()
+                        start_date = datetime.fromtimestamp(start_ts).date()
+                    except (OSError, OverflowError, ValueError, TypeError):
+                        continue
+                    
+                    # 只要结束日期 >= 今天，则认为正在进行或即将举办
+                    if end_date >= today_date:
+                        upcoming_competitions.append(comp)
+                else:
+                    # 如果没有日期信息，保守地包含
+                    upcoming_competitions.append(comp)
+            
             # 格式化数据
             formatted_competitions = []
-            for comp in china_competitions[:limit]:
+            for comp in upcoming_competitions[:limit]:
+                # 确保 comp 是字典类型
+                if not isinstance(comp, dict):
+                    logger.warning(f"跳过非字典类型的比赛数据: {type(comp)}")
+                    continue
+                
                 # 获取比赛名称（中文）
                 name = comp.get("name", "未知比赛")
                 
@@ -121,23 +204,30 @@ class RecentCompetitionsService:
                 locations = comp.get("locations", [])
                 city_name = ""
                 province_name = ""
-                if locations:
+                if locations and isinstance(locations, list):
                     first_location = locations[0]
-                    # 城市名称：优先使用中文
-                    city_name_zh = first_location.get("city_name_zh", "")
-                    city_name_en = first_location.get("city_name", "")
-                    city_name = city_name_zh or city_name_en
-                    
-                    # 省份名称：优先使用中文
-                    province = first_location.get("province", {})
-                    province_name_zh = province.get("name_zh", "")
-                    province_name_en = province.get("name", "")
-                    province_name = province_name_zh or province_name_en
+                    # 确保 first_location 是字典类型
+                    if isinstance(first_location, dict):
+                        # 城市名称：优先使用中文
+                        city_name_zh = first_location.get("city_name_zh", "")
+                        city_name_en = first_location.get("city_name", "")
+                        city_name = city_name_zh or city_name_en
+                        
+                        # 省份名称：优先使用中文
+                        province = first_location.get("province", {})
+                        if isinstance(province, dict):
+                            province_name_zh = province.get("name_zh", "")
+                            province_name_en = province.get("name", "")
+                            province_name = province_name_zh or province_name_en
                 
                 # 获取日期信息
                 date_info = comp.get("date", {})
-                start_timestamp = date_info.get("from", 0)
-                end_timestamp = date_info.get("to", start_timestamp)
+                if isinstance(date_info, dict):
+                    start_timestamp = date_info.get("from", 0)
+                    end_timestamp = date_info.get("to", start_timestamp)
+                else:
+                    start_timestamp = 0
+                    end_timestamp = 0
                 
                 start_date_str = self._parse_timestamp_to_date_str(start_timestamp)
                 end_date_str = self._parse_timestamp_to_date_str(end_timestamp)
@@ -196,7 +286,7 @@ class RecentCompetitionsService:
             location_display = f" [{location_str}]" if location_str else ""
             
             lines.append(f"{i}. {name}{location_display}")
-            lines.append(f"   日期: {date_str}")
+            lines.append(f"   Date: {date_str}")
             lines.append("")  # 空行分隔
         
         return "\n".join(lines)

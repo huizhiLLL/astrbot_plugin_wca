@@ -249,7 +249,11 @@ class NemesisService:
         better_ids = self._filter_better_players(single, average)
         people = self._get_people(better_ids)
 
-        country_ids = {p.get("country_id") for p in people if p.get("country_id")}
+        country_ids: Set[str] = set()
+        for p in people:
+            country_id = p.get("country_id")
+            if country_id and isinstance(country_id, str):
+                country_ids.add(country_id)
         if country:
             country_ids.add(country)
         country_continent = self._get_country_continent_map(country_ids)
@@ -257,12 +261,13 @@ class NemesisService:
         target_continent = country_continent.get(country) or COUNTRY_TO_CONTINENT.get(country, "UNKNOWN")
 
         world_list = people
-        continent_list = [
-            p
-            for p in people
-            if (country_continent.get(p.get("country_id")) or COUNTRY_TO_CONTINENT.get(p.get("country_id"), "UNKNOWN"))
-            == target_continent
-        ]
+        continent_list = []
+        for p in people:
+            p_country_id = p.get("country_id")
+            if p_country_id and isinstance(p_country_id, str):
+                p_continent = country_continent.get(p_country_id) or COUNTRY_TO_CONTINENT.get(p_country_id, "UNKNOWN")
+                if p_continent == target_continent:
+                    continent_list.append(p)
         country_list = [p for p in people if p.get("country_id") == country]
 
         return (
