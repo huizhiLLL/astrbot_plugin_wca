@@ -154,13 +154,13 @@ class WCAQuery:
             # 如果是 WCA ID 格式（例如：2010ZHAN01），直接查询
             if len(search_input) >= 10 and search_input[:4].isdigit():
                 cursor.execute(
-                    "SELECT * FROM Persons WHERE id = ? COLLATE NOCASE",
+                    "SELECT * FROM persons WHERE wca_id = ? COLLATE NOCASE",
                     (search_input.upper(),)
                 )
             else:
                 # 按姓名搜索（支持部分匹配）
                 cursor.execute(
-                    "SELECT * FROM Persons WHERE name LIKE ? COLLATE NOCASE",
+                    "SELECT * FROM persons WHERE name LIKE ? COLLATE NOCASE",
                     (f"%{search_input}%",)
                 )
             
@@ -183,7 +183,7 @@ class WCAQuery:
             cursor = conn.cursor()
             
             # 获取选手信息
-            cursor.execute("SELECT * FROM Persons WHERE id = ?", (person_id,))
+            cursor.execute("SELECT * FROM persons WHERE wca_id = ?", (person_id,))
             person_row = cursor.fetchone()
             if not person_row:
                 return None
@@ -193,9 +193,9 @@ class WCAQuery:
             # 获取最佳单次成绩
             cursor.execute("""
                 SELECT rs.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM RanksSingle rs
-                JOIN Events e ON rs.eventId = e.id
-                WHERE rs.personId = ?
+                FROM ranks_single rs
+                JOIN events e ON rs.event_id = e.id
+                WHERE rs.person_id = ?
                 ORDER BY e.rank
             """, (person_id,))
             
@@ -204,9 +204,9 @@ class WCAQuery:
             # 获取最佳平均成绩
             cursor.execute("""
                 SELECT ra.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM RanksAverage ra
-                JOIN Events e ON ra.eventId = e.id
-                WHERE ra.personId = ?
+                FROM ranks_average ra
+                JOIN events e ON ra.event_id = e.id
+                WHERE ra.person_id = ?
                 ORDER BY e.rank
             """, (person_id,))
             
@@ -231,8 +231,8 @@ class WCAQuery:
         """
         person = records_data["person"]
         person_name = person.get("name", "未知")
-        person_id = person.get("id", "")
-        country = person.get("countryId", "")
+        person_id = person.get("wca_id", "")
+        country = person.get("country_id", "")
         
         # 构建标题（两行：姓名（含本地名）+ 基本信息）
         # Persons 表通常有本地名字段 "name"（含中文），这里保留原始 name
@@ -252,8 +252,8 @@ class WCAQuery:
         average_records = records_data["average_records"]
         
         # 创建事件ID到记录的映射
-        single_map = {r["eventId"]: r for r in single_records}
-        average_map = {r["eventId"]: r for r in average_records}
+        single_map = {r["event_id"]: r for r in single_records}
+        average_map = {r["event_id"]: r for r in average_records}
         
         # 获取所有有记录的事件
         all_event_ids = set(single_map.keys()) | set(average_map.keys())
@@ -301,9 +301,9 @@ class WCAQuery:
             if single:
                 best = single.get("best", 0)
                 single_time = format_wca_time(best, event_format)
-                wr = single.get("worldRank", 0)
-                cr = single.get("continentRank", 0)
-                nr = single.get("countryRank", 0)
+                wr = single.get("world_rank", 0)
+                cr = single.get("continent_rank", 0)
+                nr = single.get("country_rank", 0)
                 if wr and wr <= 200:
                     single_rank = f"WR{wr}"
                 elif cr and cr <= 200:
@@ -317,9 +317,9 @@ class WCAQuery:
             if average:
                 best = average.get("best", 0)
                 avg_time = format_wca_time(best, event_format)
-                wr = average.get("worldRank", 0)
-                cr = average.get("continentRank", 0)
-                nr = average.get("countryRank", 0)
+                wr = average.get("world_rank", 0)
+                cr = average.get("continent_rank", 0)
+                nr = average.get("country_rank", 0)
                 if wr and wr <= 200:
                     avg_rank = f"WR{wr}"
                 elif cr and cr <= 200:

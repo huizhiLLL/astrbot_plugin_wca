@@ -33,12 +33,12 @@ class WCAPKService:
         return None
 
     def _build_player_record(self, person: Dict[str, Any]) -> PlayerRecord:
-        person_id = person.get("id", "")
+        person_id = person.get("wca_id", "")
         data = self.query.get_person_best_records(person_id)
         if not data:
             return PlayerRecord(person, {}, {})
-        single_map = {r["eventId"]: r for r in data["single_records"]}
-        average_map = {r["eventId"]: r for r in data["average_records"]}
+        single_map = {r["event_id"]: r for r in data["single_records"]}
+        average_map = {r["event_id"]: r for r in data["average_records"]}
         return PlayerRecord(person, single_map, average_map)
 
     def _compare(self, a_val: Any, b_val: Any, event_format: str = "time") -> Tuple[str, str, int, int]:

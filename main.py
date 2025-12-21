@@ -7,7 +7,7 @@ from .wca_query import WCAQuery
 from .wca_updater import WCAUpdater
 from .wca_pk import WCAPKService
 from .wca_nemesis import NemesisService
-
+from .wca_recent_competitions import RecentCompetitionsService
 
 @register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.3")
 class WCAPlugin(Star):
@@ -20,6 +20,7 @@ class WCAPlugin(Star):
         self.wca_query: WCAQuery | None = None
         self.wca_pk: WCAPKService | None = None
         self.wca_nemesis: NemesisService | None = None
+        self.recent_competitions: RecentCompetitionsService | None = None
         self._update_task: asyncio.Task | None = None
     
     async def initialize(self):
@@ -54,6 +55,9 @@ class WCAPlugin(Star):
                 self._update_task = asyncio.create_task(self._periodic_update())
             else:
                 logger.error("WCA 数据库文件不存在，插件无法正常工作")
+            
+            # 初始化近期比赛服务（不再需要数据库）
+            self.recent_competitions = RecentCompetitionsService()
                 
         except Exception as e:
             logger.error(f"WCA 插件初始化失败: {e}")
@@ -100,9 +104,9 @@ class WCAPlugin(Star):
             if len(persons) > 1:
                 lines = [f"❌ 找到多个匹配的选手，请使用 WCA ID 查询：\n"]
                 for i, person in enumerate(persons[:10], 1):  # 最多显示10个
-                    person_id = person.get("id", "未知")
+                    person_id = person.get("wca_id", "未知")
                     person_name = person.get("name", "未知")
-                    country = person.get("countryId", "")
+                    country = person.get("country_id", "")
                     country_str = f" [{country}]" if country else ""
                     lines.append(f"{i}. {person_name} ({person_id}){country_str}")
                 
@@ -115,7 +119,7 @@ class WCAPlugin(Star):
             
             # 只有一个匹配的选手，查询成绩
             person = persons[0]
-            person_id = person.get("id", "")
+            person_id = person.get("wca_id", "")
             
             if not person_id:
                 yield event.plain_result("❌ 选手信息不完整，无法查询成绩").use_t2i(False)
@@ -162,6 +166,7 @@ class WCAPlugin(Star):
                     yield event.plain_result("✅ WCA 数据库更新成功").use_t2i(False)
                 else:
                     yield event.plain_result("❌ 数据库更新失败：文件不存在").use_t2i(False)
+                # 近期比赛服务不需要重新初始化（不依赖数据库）
             else:
                 yield event.plain_result("❌ WCA 数据库更新失败，请查看日志").use_t2i(False)
                 
@@ -203,9 +208,9 @@ class WCAPlugin(Star):
             if len(persons) > 1:
                 lines = ["❌ 找到多个匹配的选手，请使用 WCA ID 查询：\n"]
                 for i, person in enumerate(persons[:10], 1):
-                    person_id = person.get("id", "未知")
+                    person_id = person.get("wca_id", "未知")
                     person_name = person.get("name", "未知")
-                    country = person.get("countryId", "")
+                    country = person.get("country_id", "")
                     country_str = f" [{country}]" if country else ""
                     lines.append(f"{i}. {person_name} ({person_id}){country_str}")
 
@@ -215,7 +220,7 @@ class WCAPlugin(Star):
                 yield event.plain_result("\n".join(lines)).use_t2i(False)
                 return
 
-            person_id = persons[0].get("id", "")
+            person_id = persons[0].get("wca_id", persons[0].get("id", ""))
             if not person_id:
                 yield event.plain_result("❌ 选手信息不完整，无法查询").use_t2i(False)
                 return
@@ -239,9 +244,9 @@ class WCAPlugin(Star):
             def _fmt_people(people: list[dict[str, str]]) -> str:
                 lines: list[str] = []
                 for p in people:
-                    pid = p.get("id", "")
+                    pid = p.get("wca_id", "")
                     name = p.get("name", "")
-                    ctry = p.get("countryId", "")
+                    ctry = p.get("country_id", "")
                     ctry_str = f" [{ctry}]" if ctry else ""
                     lines.append(f"- {name} ({pid}){ctry_str}")
                 return "\n".join(lines)
@@ -287,6 +292,31 @@ class WCAPlugin(Star):
             yield event.plain_result(text).use_t2i(False)
         except Exception as e:
             logger.error(f"WCA PK 异常: {e}")
+            yield event.plain_result(f"❌ 执行出错: {str(e)}").use_t2i(False)
+    
+    @filter.command("近期比赛")
+    async def recent_competitions_command(self, event: AstrMessageEvent):
+        """近期比赛查询：\n
+        /近期比赛
+        列出近期在中国举办的比赛（包含正在和即将要举办的）
+        """
+        if not self.recent_competitions:
+            yield event.plain_result("❌ 近期比赛服务未初始化，请稍后重试").use_t2i(False)
+            return
+        
+        try:
+            yield event.plain_result("正在查询近期比赛...").use_t2i(False)
+            
+            # 直接调用异步方法
+            competitions = await self.recent_competitions.get_recent_competitions_in_china(limit=50)
+            
+            # 格式化结果
+            result_text = self.recent_competitions.format_competitions_list(competitions)
+            
+            yield event.plain_result(result_text).use_t2i(False)
+            
+        except Exception as e:
+            logger.error(f"查询近期比赛异常: {e}")
             yield event.plain_result(f"❌ 执行出错: {str(e)}").use_t2i(False)
     
     async def terminate(self):

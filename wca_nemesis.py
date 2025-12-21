@@ -73,16 +73,16 @@ class NemesisService:
         try:
             c = conn.cursor()
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON RanksSingle(eventId, best)"
+                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best ON ranks_single(event_id, best)"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON RanksAverage(eventId, best)"
+                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best ON ranks_average(event_id, best)"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON RanksSingle(eventId, best, personId)"
+                "CREATE INDEX IF NOT EXISTS idx_rankssingle_event_best_person ON ranks_single(event_id, best, person_id)"
             )
             c.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON RanksAverage(eventId, best, personId)"
+                "CREATE INDEX IF NOT EXISTS idx_ranksaverage_event_best_person ON ranks_average(event_id, best, person_id)"
             )
             conn.commit()
         finally:
@@ -101,21 +101,21 @@ class NemesisService:
         conn = self._get_conn()
         try:
             c = conn.cursor()
-            c.execute("SELECT countryId FROM Persons WHERE id = ?", (person_id,))
+            c.execute("SELECT country_id FROM persons WHERE wca_id = ?", (person_id,))
             row = c.fetchone()
-            country = row["countryId"] if row else ""
+            country = row["country_id"] if row else ""
 
             c.execute(
-                "SELECT eventId, best FROM RanksSingle WHERE personId = ? AND best > 0",
+                "SELECT event_id, best FROM ranks_single WHERE person_id = ? AND best > 0",
                 (person_id,),
             )
-            single = {r["eventId"]: r["best"] for r in c.fetchall()}
+            single = {r["event_id"]: r["best"] for r in c.fetchall()}
 
             c.execute(
-                "SELECT eventId, best FROM RanksAverage WHERE personId = ? AND best > 0",
+                "SELECT event_id, best FROM ranks_average WHERE person_id = ? AND best > 0",
                 (person_id,),
             )
-            average = {r["eventId"]: r["best"] for r in c.fetchall()}
+            average = {r["event_id"]: r["best"] for r in c.fetchall()}
 
             return single, average, country
         finally:
@@ -155,17 +155,17 @@ class NemesisService:
             fetch_size = 10000
 
             sql_single = """
-                SELECT personId
-                FROM RanksSingle
-                WHERE eventId = ?
+                SELECT person_id
+                FROM ranks_single
+                WHERE event_id = ?
                   AND best > 0
                   AND best < ?
             """
 
             sql_average = """
-                SELECT personId
-                FROM RanksAverage
-                WHERE eventId = ?
+                SELECT person_id
+                FROM ranks_average
+                WHERE event_id = ?
                   AND best > 0
                   AND best < ?
             """
@@ -219,7 +219,7 @@ class NemesisService:
             c = conn.cursor()
             placeholders = ",".join(["?"] * len(ids))
             c.execute(
-                f"SELECT id, name, countryId FROM Persons WHERE id IN ({placeholders})",
+                f"SELECT wca_id, name, country_id FROM persons WHERE wca_id IN ({placeholders})",
                 tuple(ids),
             )
             return [dict(r) for r in c.fetchall()]
@@ -234,10 +234,10 @@ class NemesisService:
             c = conn.cursor()
             placeholders = ",".join(["?"] * len(country_ids))
             c.execute(
-                f"SELECT id, continentId FROM Countries WHERE id IN ({placeholders})",
+                f"SELECT id, continent_id FROM countries WHERE id IN ({placeholders})",
                 tuple(country_ids),
             )
-            return {row["id"]: row["continentId"] for row in c.fetchall()}
+            return {row["id"]: row["continent_id"] for row in c.fetchall()}
         except sqlite3.Error:
             return {}
         finally:
@@ -249,7 +249,7 @@ class NemesisService:
         better_ids = self._filter_better_players(single, average)
         people = self._get_people(better_ids)
 
-        country_ids = {p.get("countryId") for p in people if p.get("countryId")}
+        country_ids = {p.get("country_id") for p in people if p.get("country_id")}
         if country:
             country_ids.add(country)
         country_continent = self._get_country_continent_map(country_ids)
@@ -260,10 +260,10 @@ class NemesisService:
         continent_list = [
             p
             for p in people
-            if (country_continent.get(p.get("countryId")) or COUNTRY_TO_CONTINENT.get(p.get("countryId"), "UNKNOWN"))
+            if (country_continent.get(p.get("country_id")) or COUNTRY_TO_CONTINENT.get(p.get("country_id"), "UNKNOWN"))
             == target_continent
         ]
-        country_list = [p for p in people if p.get("countryId") == country]
+        country_list = [p for p in people if p.get("country_id") == country]
 
         return (
             target_continent,

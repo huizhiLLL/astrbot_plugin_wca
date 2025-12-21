@@ -1,6 +1,6 @@
 name: astrbot_plugin_wca # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
 display_name: WCA查询 # 用于展示的名字，可以是方便人类阅读的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
-desc: 包含个人最佳成绩查询、选手PK以及宿敌查询。 # 插件简短描述
-version: v1.0.3 # 插件版本号。格式：v1.1.1 或者 v1.1
+desc: 包含个人最佳成绩查询、宿敌查询、近期赛事查询以及选手pk。 # 插件简短描述
+version: v1.0.4 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: huizhiLLL # 作者
 repo: https://github.com/huizhiLLL/astrbot_plugin_wca # 插件的仓库地址
