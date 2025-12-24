@@ -1,28 +1,72 @@
-import sqlite3
-from pathlib import Path
+import json
 from typing import Any, Optional, Tuple
+import aiohttp
 from astrbot.api import logger
 
-# WCA 英文名称映射为显示名称
-EVENT_NAME_MAP: dict[str, str] = {
-    "3x3x3 Cube": "333",
-    "2x2x2 Cube": "222",
-    "4x4x4 Cube": "444",
-    "5x5x5 Cube": "555",
-    "6x6x6 Cube": "666",
-    "7x7x7 Cube": "777",
-    "3x3x3 Blindfolded": "333bf",
-    "3x3x3 Fewest Moves": "333fm",
-    "3x3x3 One-Handed": "333oh",
-    "Clock": "clock",
-    "Megaminx": "minx",
-    "Pyraminx": "py",
-    "Skewb": "sk",
-    "Square-1": "sq1",
-    "4x4x4 Blindfolded": "444bf",
-    "5x5x5 Blindfolded": "555bf",
-    "3x3x3 Multi-Blind": "333mbf",
-    "3x3x3 With Feet": "333ft",
+# API 项目ID到显示名称的映射（API 返回的是简化的项目ID）
+EVENT_ID_MAP: dict[str, str] = {
+    "222": "222",
+    "333": "333",
+    "444": "444",
+    "555": "555",
+    "666": "666",
+    "777": "777",
+    "333bf": "333bf",
+    "333fm": "333fm",
+    "333oh": "333oh",
+    "clock": "clock",
+    "minx": "minx",
+    "pyram": "py",
+    "skewb": "sk",
+    "sq1": "sq1",
+    "444bf": "444bf",
+    "555bf": "555bf",
+    "333mbf": "333mbf",
+    "333ft": "333ft",
+}
+
+# 项目ID到格式的映射（用于格式化时间）
+EVENT_FORMAT_MAP: dict[str, str] = {
+    "222": "time",
+    "333": "time",
+    "444": "time",
+    "555": "time",
+    "666": "time",
+    "777": "time",
+    "333bf": "time",
+    "333fm": "number",
+    "333oh": "time",
+    "clock": "time",
+    "minx": "time",
+    "pyram": "time",
+    "skewb": "time",
+    "sq1": "time",
+    "444bf": "time",
+    "555bf": "time",
+    "333mbf": "multi",
+    "333ft": "time",
+}
+
+# 项目排序顺序（用于在没有 event_rank 时排序）
+EVENT_ORDER: dict[str, int] = {
+    "222": 1,
+    "333": 2,
+    "444": 3,
+    "555": 4,
+    "666": 5,
+    "777": 6,
+    "333bf": 7,
+    "333fm": 8,
+    "333oh": 9,
+    "clock": 10,
+    "minx": 11,
+    "pyram": 12,
+    "skewb": 13,
+    "sq1": 14,
+    "444bf": 15,
+    "555bf": 16,
+    "333mbf": 17,
+    "333ft": 18,
 }
 
 
@@ -121,104 +165,106 @@ def format_multi_blind(value: int) -> str:
 
 
 class WCAQuery:
-    """WCA 数据库查询类"""
-    
-    def __init__(self, db_path: str | Path):
-        """
-        Args:
-            db_path: SQLite 数据库文件路径
-        """
-        self.db_path = Path(db_path)
-        if not self.db_path.exists():
-            raise FileNotFoundError(f"WCA 数据库文件不存在: {db_path}")
-    
-    def _get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接"""
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row  # 使用 Row 工厂，方便访问列
-        return conn
-    
-    def search_person(self, search_input: str) -> list[dict[str, Any]]:
-        """搜索选手
-        
-        Args:
-            search_input: 搜索关键词（WCA ID 或姓名）
-        
-        Returns:
-            匹配的选手列表
-        """
-        conn = self._get_connection()
+    """基于 WCA 官方 API 的查询类（不依赖本地数据库）"""
+
+    API_BASE = "https://www.worldcubeassociation.org/api/v0"
+
+    async def _fetch_json(self, url: str, params: dict | None = None) -> Any:
         try:
-            cursor = conn.cursor()
-            
-            # 如果是 WCA ID 格式（例如：2010ZHAN01），直接查询
-            if len(search_input) >= 10 and search_input[:4].isdigit():
-                cursor.execute(
-                    "SELECT * FROM persons WHERE wca_id = ? COLLATE NOCASE",
-                    (search_input.upper(),)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        logger.error(f"API 请求失败，状态码: {resp.status}, url: {url}")
+                        return None
+                    text = await resp.text()
+                    try:
+                        return json.loads(text)
+                    except ValueError as e:
+                        logger.error(f"JSON 解析失败: {e}, 响应前 200 字符: {text[:200]}")
+                        return None
+        except aiohttp.ClientError as e:
+            logger.error(f"API 请求异常: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"请求 {url} 失败: {e}")
+            return None
+
+    async def search_person(self, search_input: str) -> list[dict[str, Any]]:
+        """通过姓名或 WCA ID 搜索选手，返回数组，包含 personal_records 字段"""
+        url = f"{self.API_BASE}/persons"
+        data = await self._fetch_json(url, params={"q": search_input})
+        if not isinstance(data, list):
+            return []
+        return data
+
+    async def get_person_best_records(self, person_id: str) -> Optional[dict[str, Any]]:
+        """获取指定选手的最佳成绩（person info + personal_records）"""
+        # 专用 personal_records 接口
+        url = f"{self.API_BASE}/persons/{person_id}/personal_records"
+        data = await self._fetch_json(url)
+        personal_records = data if isinstance(data, dict) else None
+
+        person_info: dict[str, Any] | None = None
+        # 个人信息及可能的 personal_records 回退从 search 获取
+        search_results = await self.search_person(person_id)
+        if search_results:
+            match = [p for p in search_results if p.get("person", {}).get("wca_id") == person_id]
+            picked = match[0] if match else search_results[0]
+            if not personal_records:
+                personal_records = picked.get("personal_records")
+            person_info = picked.get("person")
+
+        if not personal_records or not isinstance(personal_records, dict):
+            return None
+        if not person_info:
+            person_info = {"wca_id": person_id}
+
+        single_records: list[dict[str, Any]] = []
+        average_records: list[dict[str, Any]] = []
+
+        for event_id, rec in personal_records.items():
+            if not isinstance(rec, dict):
+                continue
+            event_format = EVENT_FORMAT_MAP.get(event_id, "time")
+            single = rec.get("single")
+            if isinstance(single, dict):
+                single_records.append(
+                    {
+                        "event_id": event_id,
+                        "event_name": EVENT_ID_MAP.get(event_id, event_id),
+                        "event_format": event_format,
+                        "best": single.get("best", 0),
+                        "world_rank": single.get("world_rank", 0),
+                        "continent_rank": single.get("continent_rank", 0),
+                        "country_rank": single.get("country_rank", 0),
+                        "event_rank": EVENT_ORDER.get(event_id, 999),
+                    }
                 )
-            else:
-                # 按姓名搜索（支持部分匹配）
-                cursor.execute(
-                    "SELECT * FROM persons WHERE name LIKE ? COLLATE NOCASE",
-                    (f"%{search_input}%",)
+            average = rec.get("average")
+            if isinstance(average, dict):
+                average_records.append(
+                    {
+                        "event_id": event_id,
+                        "event_name": EVENT_ID_MAP.get(event_id, event_id),
+                        "event_format": event_format,
+                        "best": average.get("best", 0),
+                        "world_rank": average.get("world_rank", 0),
+                        "continent_rank": average.get("continent_rank", 0),
+                        "country_rank": average.get("country_rank", 0),
+                        "event_rank": EVENT_ORDER.get(event_id, 999),
+                    }
                 )
-            
-            results = cursor.fetchall()
-            return [dict(row) for row in results]
-        finally:
-            conn.close()
-    
-    def get_person_best_records(self, person_id: str) -> Optional[dict[str, Any]]:
-        """获取选手的最佳单次和平均成绩
-        
-        Args:
-            person_id: WCA ID
-        
-        Returns:
-            包含最佳单次和平均成绩的字典，如果未找到则返回 None
-        """
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            
-            # 获取选手信息
-            cursor.execute("SELECT * FROM persons WHERE wca_id = ?", (person_id,))
-            person_row = cursor.fetchone()
-            if not person_row:
-                return None
-            
-            person = dict(person_row)
-            
-            # 获取最佳单次成绩
-            cursor.execute("""
-                SELECT rs.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM ranks_single rs
-                JOIN events e ON rs.event_id = e.id
-                WHERE rs.person_id = ?
-                ORDER BY e.rank
-            """, (person_id,))
-            
-            single_records = cursor.fetchall()
-            
-            # 获取最佳平均成绩
-            cursor.execute("""
-                SELECT ra.*, e.id as event_id, e.name as event_name, e.format as event_format, e.rank as event_rank
-                FROM ranks_average ra
-                JOIN events e ON ra.event_id = e.id
-                WHERE ra.person_id = ?
-                ORDER BY e.rank
-            """, (person_id,))
-            
-            average_records = cursor.fetchall()
-            
-            return {
-                "person": person,
-                "single_records": [dict(row) for row in single_records],
-                "average_records": [dict(row) for row in average_records],
-            }
-        finally:
-            conn.close()
+
+        return {
+            "person": {
+                "wca_id": person_info.get("wca_id", ""),
+                "name": person_info.get("name", ""),
+                "country_id": person_info.get("country_iso2", ""),
+                "gender": person_info.get("gender", ""),
+            },
+            "single_records": single_records,
+            "average_records": average_records,
+        }
     
     def format_person_records(self, records_data: dict[str, Any]) -> str:
         """格式化选手成绩为文本
@@ -286,14 +332,16 @@ class WCAQuery:
             event_format = "time"
             
             if single:
-                event_name = single.get("event_name", f"项目{event_id}")
+                event_name = single.get("event_name", event_id)
                 event_format = single.get("event_format", "time")
             elif average:
-                event_name = average.get("event_name", f"项目{event_id}")
+                event_name = average.get("event_name", event_id)
                 event_format = average.get("event_format", "time")
-
-            # 友好名称映射：仅按英文名称映射
-            event_name = EVENT_NAME_MAP.get(event_name, event_name)
+            
+            # event_name 已经是简化格式（如 "333", "py"），不需要再次映射
+            # 如果为空，使用 event_id
+            if not event_name:
+                event_name = event_id
             
             # 格式化单次成绩
             single_time = "-"
