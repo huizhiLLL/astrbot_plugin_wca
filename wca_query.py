@@ -2,6 +2,7 @@ import json
 from typing import Any, Optional, Tuple
 import aiohttp
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent
 
 # API 项目ID到显示名称的映射（API 返回的是简化的项目ID）
 EVENT_ID_MAP: dict[str, str] = {
@@ -197,27 +198,103 @@ class WCAQuery:
             return []
         return data
 
-    async def get_person_best_records(self, person_id: str) -> Optional[dict[str, Any]]:
+    async def get_person_best_records(
+        self,
+        person_id: str,
+        person_entry: dict[str, Any] | None = None,
+    ) -> Optional[dict[str, Any]]:
         """获取指定选手的最佳成绩（person info + personal_records）"""
-        # 专用 personal_records 接口
-        url = f"{self.API_BASE}/persons/{person_id}/personal_records"
-        data = await self._fetch_json(url)
-        personal_records = data if isinstance(data, dict) else None
-
+        personal_records: dict[str, Any] | None = None
         person_info: dict[str, Any] | None = None
-        # 个人信息及可能的 personal_records 回退从 search 获取
-        search_results = await self.search_person(person_id)
-        if search_results:
-            match = [p for p in search_results if p.get("person", {}).get("wca_id") == person_id]
-            picked = match[0] if match else search_results[0]
-            if not personal_records:
-                personal_records = picked.get("personal_records")
-            person_info = picked.get("person")
+        competition_count: int | None = None
+        medals: dict[str, Any] | None = None
+        records: dict[str, Any] | None = None
+        total_solves: int | None = None
+
+        if isinstance(person_entry, dict):
+            pr = person_entry.get("personal_records")
+            if isinstance(pr, dict):
+                personal_records = pr
+
+            p = person_entry.get("person")
+            if isinstance(p, dict):
+                person_info = p
+
+            cc = person_entry.get("competition_count")
+            if isinstance(cc, int):
+                competition_count = cc
+
+            m = person_entry.get("medals")
+            if isinstance(m, dict):
+                medals = m
+
+            r = person_entry.get("records")
+            if isinstance(r, dict):
+                records = r
+
+            ts = person_entry.get("total_solves")
+            if isinstance(ts, int):
+                total_solves = ts
+
+        if not personal_records:
+            url = f"{self.API_BASE}/persons/{person_id}/personal_records"
+            data = await self._fetch_json(url)
+            personal_records = data if isinstance(data, dict) else None
+
+        if not person_info:
+            search_results = await self.search_person(person_id)
+            if search_results:
+                match = [
+                    p
+                    for p in search_results
+                    if p.get("person", {}).get("wca_id") == person_id
+                ]
+                picked = match[0] if match else search_results[0]
+
+                if not personal_records:
+                    pr = picked.get("personal_records")
+                    if isinstance(pr, dict):
+                        personal_records = pr
+
+                p = picked.get("person")
+                if isinstance(p, dict):
+                    person_info = p
+
+                if competition_count is None and isinstance(
+                    picked.get("competition_count"),
+                    int,
+                ):
+                    competition_count = picked.get("competition_count")
+                if medals is None and isinstance(picked.get("medals"), dict):
+                    medals = picked.get("medals")
+                if records is None and isinstance(picked.get("records"), dict):
+                    records = picked.get("records")
+                if total_solves is None and isinstance(picked.get("total_solves"), int):
+                    total_solves = picked.get("total_solves")
 
         if not personal_records or not isinstance(personal_records, dict):
             return None
+
         if not person_info:
             person_info = {"wca_id": person_id}
+
+        avatar_thumb_url = ""
+        avatar = person_info.get("avatar")
+        if isinstance(avatar, dict):
+            avatar_thumb_url = str(
+                avatar.get("thumb_url") or avatar.get("url") or "",
+            )
+
+        country_name = ""
+        country_obj = person_info.get("country")
+        if isinstance(country_obj, dict):
+            country_name = str(country_obj.get("name") or "")
+
+        country_iso2 = (
+            person_info.get("country_iso2")
+            or (person_info.get("country") or {}).get("iso2")
+            or ""
+        )
 
         single_records: list[dict[str, Any]] = []
         average_records: list[dict[str, Any]] = []
@@ -259,9 +336,17 @@ class WCAQuery:
             "person": {
                 "wca_id": person_info.get("wca_id", ""),
                 "name": person_info.get("name", ""),
-                "country_id": person_info.get("country_iso2", ""),
+                "country_id": country_iso2,
+                "country_iso2": country_iso2,
+                "country_name": country_name,
                 "gender": person_info.get("gender", ""),
+                "url": person_info.get("url", ""),
+                "avatar_thumb_url": avatar_thumb_url,
             },
+            "competition_count": competition_count,
+            "medals": medals,
+            "records": records,
+            "total_solves": total_solves,
             "single_records": single_records,
             "average_records": average_records,
         }
@@ -305,7 +390,7 @@ class WCAQuery:
         all_event_ids = set(single_map.keys()) | set(average_map.keys())
         
         if not all_event_ids:
-            return f"{header}\n❌ 暂无 WCA 成绩记录"
+            return f"{header}\n还没有 WCA 成绩记录呢，快去参加比赛吧~"
         
         lines = []
         
@@ -352,9 +437,9 @@ class WCAQuery:
                 wr = single.get("world_rank", 0)
                 cr = single.get("continent_rank", 0)
                 nr = single.get("country_rank", 0)
-                if wr and wr <= 200:
+                if wr and wr <= 100:
                     single_rank = f"WR{wr}"
-                elif cr and cr <= 200:
+                elif cr and cr <= 100:
                     single_rank = f"CR{cr}"
                 elif nr and nr <= 200:
                     single_rank = f"NR{nr}"
@@ -368,9 +453,9 @@ class WCAQuery:
                 wr = average.get("world_rank", 0)
                 cr = average.get("continent_rank", 0)
                 nr = average.get("country_rank", 0)
-                if wr and wr <= 200:
+                if wr and wr <= 100:
                     avg_rank = f"WR{wr}"
-                elif cr and cr <= 200:
+                elif cr and cr <= 100:
                     avg_rank = f"CR{cr}"
                 elif nr and nr <= 200:
                     avg_rank = f"NR{nr}"
@@ -391,7 +476,195 @@ class WCAQuery:
             lines.append(line)
         
         if not lines:
-            return f"{header}\n❌ 暂无有效成绩记录"
+            return f"{header}\n还没有有效的成绩记录哦，再接再厉呀~"
         
         return header + "\n".join(lines)
 
+
+class WCACommandService:
+    def __init__(self, query: WCAQuery):
+        self.query = query
+
+    async def handle(self, event: AstrMessageEvent):
+        message_str = event.message_str.strip()
+        parts = message_str.split(maxsplit=1)
+        
+        if len(parts) < 2:
+            yield event.plain_result(
+                "请提供 WCAID 或姓名哦\n"
+                "用法: /wca [WCAID/姓名]\n"
+                "示例: /wca 2026LIHU01\n"
+            ).use_t2i(False)
+            return
+        
+        search_input = parts[1].strip()
+        yield event.plain_result("正在查询选手信息，请稍候哦...").use_t2i(False)
+        
+        try:
+            persons = await self.query.search_person(search_input)
+            
+            if not persons:
+                yield event.plain_result(
+                    f"抱歉啦，没有找到关于 {search_input} 的信息哦"
+                ).use_t2i(False)
+                return
+            
+            if len(persons) > 1:
+                lines = [f"好准哦，找到了多个匹配的选手，请使用 WCAID 查询具体哪位呢：\n"]
+                for i, item in enumerate(persons[:10], 1):
+                    person_info = item.get("person", {}) if isinstance(item, dict) else {}
+                    person_id = person_info.get("wca_id", "未知")
+                    person_name = person_info.get("name", "未知")
+                    country = person_info.get("country_iso2", "")
+                    country_str = f" [{country}]" if country else ""
+                    lines.append(f"{i}. {person_name} ({person_id}){country_str}")
+                
+                if len(persons) > 10:
+                    lines.append(f"\n... 还有 {len(persons) - 10} 个结果未显示哦")
+                
+                lines.append("\n使用方法: /wca [WCAID]")
+                yield event.plain_result("\n".join(lines)).use_t2i(False)
+                return
+            
+            picked = persons[0]
+            person_info = picked.get("person", {}) if isinstance(picked, dict) else {}
+            person_id = person_info.get("wca_id", "")
+            
+            if not person_id:
+                yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
+                return
+            
+            records_data = await self.query.get_person_best_records(
+                person_id,
+                person_entry=picked,
+            )
+            
+            if not records_data:
+                person_name = person_info.get("name", "该选手")
+                yield event.plain_result(
+                    f"{person_name} ({person_id}) 还没有 WCA 成绩记录呢，快去参加比赛吧~"
+                ).use_t2i(False)
+                return
+            
+            result_text = self.query.format_person_records(records_data)
+            yield event.plain_result(result_text).use_t2i(False)
+            
+        except Exception as e:
+            logger.error(f"WCA 查询异常: {e}")
+            yield event.plain_result(f"查询出了一点小状况呢: {str(e)}").use_t2i(False)
+
+
+class WCANemesisService:
+    def __init__(self, query: WCAQuery, api_base: str):
+        self.query = query
+        self.api_base = api_base
+
+    async def handle(self, event: AstrMessageEvent):
+        message_str = event.message_str.strip()
+        parts = message_str.split(maxsplit=1)
+        if len(parts) < 2:
+            yield event.plain_result(
+                "请提供 WCAID 或姓名哦\n"
+                "用法: /宿敌 [WCAID/姓名]\n"
+                "示例: /宿敌 2026LIHU01\n"
+            ).use_t2i(False)
+            return
+
+        search_input = parts[1].strip()
+
+        try:
+            persons = await self.query.search_person(search_input)
+            if not persons:
+                yield event.plain_result(
+                    f"抱歉啦，没有找到关于 {search_input} 的信息哦\n"
+                    "提示：可以使用 WCAID（如：2026LIHU01）或姓名进行搜索"
+                ).use_t2i(False)
+                return
+
+            if len(persons) > 1:
+                lines = ["好准哦，找到了多个匹配的选手，请使用 WCAID 查询具体哪位呢：\n"]
+                for i, item in enumerate(persons[:10], 1):
+                    pinfo = item.get("person", {}) if isinstance(item, dict) else {}
+                    person_id = pinfo.get("wca_id", "未知")
+                    person_name = pinfo.get("name", "未知")
+                    country = pinfo.get("country_iso2", "")
+                    country_str = f" [{country}]" if country else ""
+                    lines.append(f"{i}. {person_name} ({person_id}){country_str}")
+
+                if len(persons) > 10:
+                    lines.append(f"\n... 还有 {len(persons) - 10} 个结果未显示哦")
+                lines.append("\n使用方法: /wca宿敌 <WCAID>")
+                yield event.plain_result("\n".join(lines)).use_t2i(False)
+                return
+
+            pinfo = persons[0].get("person", {}) if isinstance(persons[0], dict) else {}
+            person_id = pinfo.get("wca_id", pinfo.get("id", ""))
+            if not person_id:
+                yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
+                return
+
+            yield event.plain_result("收到啦！正在为您寻找宿敌，请稍候哦...").use_t2i(False)
+
+            nemesis_data = await self._call_nemesis_api(person_id)
+            if not nemesis_data:
+                yield event.plain_result("查询宿敌失败了，请稍后重试哦").use_t2i(False)
+                return
+
+            world_count = nemesis_data.get("world_count", 0)
+            continent_count = nemesis_data.get("continent_count", 0)
+            country_count = nemesis_data.get("country_count", 0)
+            world_list = nemesis_data.get("world_list", [])
+            continent_list = nemesis_data.get("continent_list", [])
+            country_list = nemesis_data.get("country_list", [])
+
+            if world_count == 0:
+                yield event.plain_result(
+                    f"哇！该选手目前还没有宿敌呢，太强啦~"
+                ).use_t2i(False)
+                return
+
+            person_name = persons[0].get("name", "")
+            title = f"选手 {person_name} ({person_id}) 的宿敌结果出来啦："
+            summary = f"世界：{world_count}人，洲：{continent_count}人，地区：{country_count}人"
+
+            def _fmt_people(people: list[dict[str, str]]) -> str:
+                lines: list[str] = []
+                for p in people:
+                    pid = p.get("wca_id", "")
+                    name = p.get("name", "")
+                    ctry = p.get("country_id", "")
+                    ctry_str = f" [{ctry}]" if ctry else ""
+                    lines.append(f"- {name} ({pid}){ctry_str}")
+                return "\n".join(lines)
+
+            details: list[str] = []
+            if 0 < world_count <= 10:
+                details.append("世界：\n" + _fmt_people(world_list))
+            if 0 < continent_count <= 10:
+                details.append("洲：\n" + _fmt_people(continent_list))
+            if 0 < country_count <= 10:
+                details.append("地区：\n" + _fmt_people(country_list))
+
+            text = "\n".join([title, summary] + (["", "\n\n".join(details)] if details else []))
+            yield event.plain_result(text).use_t2i(False)
+
+        except Exception as e:
+            yield event.plain_result(f"执行出错: {str(e)}").use_t2i(False)
+
+    async def _call_nemesis_api(self, person_id: str) -> dict | None:
+        url = f"{self.api_base.rstrip('/')}/nemesis"
+        payload = {"person_id": person_id}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        logger.error(f"宿敌接口调用失败，状态码: {resp.status}")
+                        return None
+                    data = await resp.json()
+                    if isinstance(data, dict) and "error" in data:
+                        logger.error(f"宿敌接口返回错误: {data.get('error')}")
+                        return None
+                    return data if isinstance(data, dict) else None
+        except Exception as e:
+            logger.error(f"调用宿敌接口异常: {e}")
+            return None

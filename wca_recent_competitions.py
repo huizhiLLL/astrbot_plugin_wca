@@ -3,6 +3,7 @@ import aiohttp
 from datetime import datetime, date
 from typing import List, Dict, Any
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent
 
 
 class RecentCompetitionsService:
@@ -259,9 +260,9 @@ class RecentCompetitionsService:
             格式化后的字符串
         """
         if not competitions:
-            return "暂无近期在中国举办的比赛"
+            return "最近好像没有在中国举办的比赛呢，再等等看吧~"
         
-        lines = [f"近期在中国举办的比赛（共 {len(competitions)} 场）：\n"]
+        lines = [f"为您找到近期在中国举办的比赛共 {len(competitions)} 场哦：\n"]
         
         for i, comp in enumerate(competitions, 1):
             name = comp.get("name", "未知比赛")
@@ -286,7 +287,22 @@ class RecentCompetitionsService:
             location_display = f" [{location_str}]" if location_str else ""
             
             lines.append(f"{i}. {name}{location_display}")
-            lines.append(f"   Date: {date_str}")
+            lines.append(f"   📅 日期: {date_str}")
             lines.append("")  # 空行分隔
         
         return "\n".join(lines)
+
+    async def handle(self, event: AstrMessageEvent):
+        try:
+            yield event.plain_result("正在为您查询近期比赛信息，请稍候哦...").use_t2i(False)
+            competitions = await self.get_recent_competitions_in_china(limit=50)
+            result_text = self.format_competitions_list(competitions)
+            if not competitions:
+                yield event.plain_result("最近好像没有比赛信息哦").use_t2i(False)
+                return
+
+            yield event.plain_result(result_text).use_t2i(False)
+
+        except Exception as e:
+            logger.error(f"查询近期比赛异常: {e}")
+            yield event.plain_result(f"获取比赛信息出错啦，请稍后再试哦").use_t2i(False)

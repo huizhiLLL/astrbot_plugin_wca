@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 from astrbot.api import logger
+from astrbot.api.event import AstrMessageEvent
 from .wca_query import WCAQuery, format_wca_time, EVENT_ID_MAP
 
 
@@ -18,24 +19,22 @@ class WCAPKService:
     def __init__(self, query: WCAQuery):
         self.query = query
 
-    async def _resolve_person(self, keyword: str) -> Optional[Dict[str, Any]]:
+    async def _resolve_person(self, keyword: str) -> Tuple[Optional[Dict[str, Any]], str]:
         """根据 ID 或姓名解析唯一选手（调用 WCA API）"""
         persons = await self.query.search_person(keyword)
         if not persons:
-            return None
+            return None, "not_found"
         if len(persons) == 1:
-            return persons[0]
-        # 多个结果时，尝试精确姓名匹配
+            return persons[0], "ok"
         exact = [p for p in persons if p.get("person", {}).get("name") == keyword]
         if len(exact) == 1:
-            return exact[0]
-        # 仍多于 1 个，视为歧义
-        return None
+            return exact[0], "ok"
+        return None, "ambiguous"
 
     async def _build_player_record(self, person: Dict[str, Any]) -> PlayerRecord:
         person_info = person.get("person", person)
         person_id = person_info.get("wca_id", "")
-        data = await self.query.get_person_best_records(person_id)
+        data = await self.query.get_person_best_records(person_id, person_entry=person)
         if not data:
             return PlayerRecord(person_info, {}, {})
         single_map = {r["event_id"]: r for r in data["single_records"]}
@@ -78,12 +77,16 @@ class WCAPKService:
 
     async def compare(self, kw1: str, kw2: str) -> Tuple[str, Optional[str]]:
         """对比两位选手成绩"""
-        p1 = await self._resolve_person(kw1)
-        p2 = await self._resolve_person(kw2)
+        p1, s1 = await self._resolve_person(kw1)
+        p2, s2 = await self._resolve_person(kw2)
         if not p1:
-            return "", f"❌ 未找到选手：{kw1}"
+            if s1 == "ambiguous":
+                return "", f"选手 {kw1} 有多个同名结果，请使用 WCAID 再试哦~"
+            return "", f"哎呀，没找到选手 {kw1} 哦，请检查一下名字或 WCAID 呀~"
         if not p2:
-            return "", f"❌ 未找到选手：{kw2}"
+            if s2 == "ambiguous":
+                return "", f"选手 {kw2} 有多个同名结果，请使用 WCAID 再试哦~"
+            return "", f"哎呀，没找到选手 {kw2} 哦，请检查一下名字或 WCAID 呀~"
 
         r1 = await self._build_player_record(p1)
         r2 = await self._build_player_record(p2)
@@ -91,7 +94,7 @@ class WCAPKService:
         # 事件并集
         all_events = set(r1.single_map.keys()) | set(r1.average_map.keys()) | set(r2.single_map.keys()) | set(r2.average_map.keys())
         if not all_events:
-            return "", "❌ 两位选手均无成绩记录"
+            return "", "这两位选手好像都没有成绩记录呢，没法对比呀~"
 
         lines = []
         name1 = r1.person.get("name", kw1)
@@ -169,10 +172,30 @@ class WCAPKService:
 
         result_text = "\n".join(lines) if lines else ""
         if score_a > score_b:
-            result_text += f"\n\n胜利 (⭐){score_a} : {score_b}"
+            result_text += f"\n\n (⭐) {score_a} : {score_b}\n恭喜 {name1} 胜利啦！ "
         elif score_b > score_a:
-            result_text += f"\n\n   {score_a} : {score_b} (⭐) 胜利"
+            result_text += f"\n\n {score_a} : {score_b} (⭐)\n恭喜 {name2} 胜利啦！"
         else:
-            result_text += f"\n\n   {score_a} : {score_b} 平局"
+            result_text += f"\n\n {score_a} : {score_b} \n竟然是平局呢~"
         return result_text, None
 
+    async def handle(self, event: AstrMessageEvent):
+        msg = event.message_str.strip()
+        parts = msg.split(maxsplit=2)
+        if len(parts) < 3:
+            yield event.plain_result(
+                "参数不足哦\n用法: /wcapk <选手1> <选手2>\n示例: /wcapk 2026LIHU01 2009ZEMD01"
+            ).use_t2i(False)
+            return
+
+        p1, p2 = parts[1].strip(), parts[2].strip()
+        yield event.plain_result(f"正在为您对比 {p1} 和 {p2} 的成绩，请稍候哦...").use_t2i(False)
+        try:
+            text, err = await self.compare(p1, p2)
+            if err:
+                yield event.plain_result(f"对比出了一点小状况呢: {err}").use_t2i(False)
+                return
+            yield event.plain_result(text).use_t2i(False)
+        except Exception as e:
+            logger.error(f"WCA PK 异常: {e}")
+            yield event.plain_result(f"对比出了一点小状况呢: {str(e)}").use_t2i(False)
