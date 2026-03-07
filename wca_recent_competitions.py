@@ -287,7 +287,7 @@ class RecentCompetitionsService:
             location_display = f" [{location_str}]" if location_str else ""
             
             lines.append(f"{i}. {name}{location_display}")
-            lines.append(f"   📅 日期: {date_str}")
+            lines.append(f"   日期: {date_str}")
             lines.append("")  # 空行分隔
         
         return "\n".join(lines)
