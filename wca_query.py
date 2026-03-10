@@ -498,7 +498,6 @@ class WCACommandService:
         message_str = event.message_str.strip()
         search_input = strip_command_prefix(message_str, "wca")
         target_qq = extract_first_mentioned_qq(event)
-        resolved_from_binding = False
 
         if target_qq:
             bound_wca_id = self.bindings.get(target_qq)
@@ -506,7 +505,6 @@ class WCACommandService:
                 yield event.plain_result(f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢").use_t2i(False)
                 return
             search_input = bound_wca_id
-            resolved_from_binding = True
         elif not search_input:
             sender_qq = event.get_sender_id()
             bound_wca_id = self.bindings.get(sender_qq)
@@ -518,7 +516,6 @@ class WCACommandService:
                 ).use_t2i(False)
                 return
             search_input = bound_wca_id
-            resolved_from_binding = True
         else:
             search_input = strip_mentions(search_input)
 
@@ -580,8 +577,6 @@ class WCACommandService:
                 return
 
             result_text = self.query.format_person_records(records_data)
-            if resolved_from_binding:
-                result_text = f"已使用绑定的 WCAID：{person_id}\n\n" + result_text
             yield event.plain_result(result_text).use_t2i(False)
 
         except Exception as e:
