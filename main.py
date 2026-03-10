@@ -2,8 +2,9 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 
+from .wca_bindings import WCABindingStore
 from .wca_pic import WCAPicService
-from .wca_query import WCAQuery, WCACommandService, WCANemesisService
+from .wca_query import WCAQuery, WCACommandService, WCABindCommandService, WCANemesisService
 from .wca_pk import WCAPKService
 from .wca_recent_competitions import RecentCompetitionsService
 
@@ -14,7 +15,9 @@ class WCAPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
         self.wca_query: WCAQuery | None = None
-        self.wca_command: WCACommandService | None = None
+        self.wca_bindings = WCABindingStore()
+        self.wca_command_service: WCACommandService | None = None
+        self.wca_bind_command: WCABindCommandService | None = None
         self.wca_pic: WCAPicService | None = None
         self.wca_pk: WCAPKService | None = None
         self.recent_competitions: RecentCompetitionsService | None = None
@@ -26,7 +29,8 @@ class WCAPlugin(Star):
         try:
             # 纯 API 模式，无需本地数据库
             self.wca_query = WCAQuery()
-            self.wca_command = WCACommandService(self.wca_query)
+            self.wca_command_service = WCACommandService(self.wca_query, self.wca_bindings)
+            self.wca_bind_command = WCABindCommandService(self.wca_query, self.wca_bindings)
             self.wca_pic = WCAPicService(self.wca_query, self.context)
             self.wca_pk = WCAPKService(self.wca_query)
             self.recent_competitions = RecentCompetitionsService()
@@ -39,12 +43,21 @@ class WCAPlugin(Star):
     @filter.command("wca")
     async def wca_command(self, event: AstrMessageEvent):
         """查询 WCA 选手信息"""
-        if not self.wca_command:
+        if not self.wca_command_service:
             yield event.plain_result(
                 "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
             ).use_t2i(False)
             return
-        async for result in self.wca_command.handle(event):
+        async for result in self.wca_command_service.handle(event):
+            yield result
+
+    @filter.command("wca绑定")
+    async def wca_bind(self, event: AstrMessageEvent):
+        """绑定 QQ 与 WCAID"""
+        if not self.wca_bind_command:
+            yield event.plain_result("哎呀，初始化 WCA 绑定出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.wca_bind_command.handle(event):
             yield result
 
     @filter.command("wcapic")

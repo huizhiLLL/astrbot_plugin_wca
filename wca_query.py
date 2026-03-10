@@ -4,6 +4,14 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from .wca_bindings import (
+    WCABindingStore,
+    extract_first_mentioned_qq,
+    normalize_wca_id,
+    strip_command_prefix,
+    strip_mentions,
+)
+
 # API 项目ID到显示名称的映射（API 返回的是简化的项目ID）
 EVENT_ID_MAP: dict[str, str] = {
     "222": "222",
@@ -482,33 +490,58 @@ class WCAQuery:
 
 
 class WCACommandService:
-    def __init__(self, query: WCAQuery):
+    def __init__(self, query: WCAQuery, bindings: WCABindingStore):
         self.query = query
+        self.bindings = bindings
 
     async def handle(self, event: AstrMessageEvent):
         message_str = event.message_str.strip()
-        parts = message_str.split(maxsplit=1)
-        
-        if len(parts) < 2:
+        search_input = strip_command_prefix(message_str, "wca")
+        target_qq = extract_first_mentioned_qq(event)
+        resolved_from_binding = False
+
+        if target_qq:
+            bound_wca_id = self.bindings.get(target_qq)
+            if not bound_wca_id:
+                yield event.plain_result(f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢").use_t2i(False)
+                return
+            search_input = bound_wca_id
+            resolved_from_binding = True
+        elif not search_input:
+            sender_qq = event.get_sender_id()
+            bound_wca_id = self.bindings.get(sender_qq)
+            if not bound_wca_id:
+                yield event.plain_result(
+                    "你还没有绑定 WCAID 呢\n"
+                    "用法: /wca绑定 <WCAID或姓名>\n"
+                    "示例: /wca绑定 2026LIHU01"
+                ).use_t2i(False)
+                return
+            search_input = bound_wca_id
+            resolved_from_binding = True
+        else:
+            search_input = strip_mentions(search_input)
+
+        if not search_input:
             yield event.plain_result(
                 "请提供 WCAID 或姓名哦\n"
                 "用法: /wca [WCAID/姓名]\n"
                 "示例: /wca 2026LIHU01\n"
+                "也可以先用 /wca绑定 绑定后直接 /wca"
             ).use_t2i(False)
             return
-        
-        search_input = parts[1].strip()
+
         yield event.plain_result("正在查询选手信息，请稍候哦...").use_t2i(False)
-        
+
         try:
             persons = await self.query.search_person(search_input)
-            
+
             if not persons:
                 yield event.plain_result(
                     f"抱歉啦，没有找到关于 {search_input} 的信息哦"
                 ).use_t2i(False)
                 return
-            
+
             if len(persons) > 1:
                 lines = [f"好准哦，找到了多个匹配的选手，请使用 WCAID 查询具体哪位呢：\n"]
                 for i, item in enumerate(persons[:10], 1):
@@ -518,40 +551,114 @@ class WCACommandService:
                     country = person_info.get("country_iso2", "")
                     country_str = f" [{country}]" if country else ""
                     lines.append(f"{i}. {person_name} ({person_id}){country_str}")
-                
+
                 if len(persons) > 10:
                     lines.append(f"\n... 还有 {len(persons) - 10} 个结果未显示哦")
-                
+
                 lines.append("\n使用方法: /wca [WCAID]")
                 yield event.plain_result("\n".join(lines)).use_t2i(False)
                 return
-            
+
             picked = persons[0]
             person_info = picked.get("person", {}) if isinstance(picked, dict) else {}
             person_id = person_info.get("wca_id", "")
-            
+
             if not person_id:
                 yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
                 return
-            
+
             records_data = await self.query.get_person_best_records(
                 person_id,
                 person_entry=picked,
             )
-            
+
             if not records_data:
                 person_name = person_info.get("name", "该选手")
                 yield event.plain_result(
                     f"{person_name} ({person_id}) 还没有 WCA 成绩记录呢，快去参加比赛吧~"
                 ).use_t2i(False)
                 return
-            
+
             result_text = self.query.format_person_records(records_data)
+            if resolved_from_binding:
+                result_text = f"已使用绑定的 WCAID：{person_id}\n\n" + result_text
             yield event.plain_result(result_text).use_t2i(False)
-            
+
         except Exception as e:
             logger.error(f"WCA 查询异常: {e}")
             yield event.plain_result(f"查询出了一点小状况呢: {str(e)}").use_t2i(False)
+
+
+class WCABindCommandService:
+    def __init__(self, query: WCAQuery, bindings: WCABindingStore):
+        self.query = query
+        self.bindings = bindings
+
+    async def handle(self, event: AstrMessageEvent):
+        qq_id = event.get_sender_id()
+        if not qq_id:
+            yield event.plain_result("哎呀，拿不到你的 QQ 号呢，要在 QQ 里用才行哦~").use_t2i(False)
+            return
+
+        search_input = strip_command_prefix(event.message_str, "wca绑定")
+        search_input = strip_mentions(search_input)
+        if not search_input:
+            yield event.plain_result(
+                "请输入要绑定的姓名或 WCAID 哦\n"
+                "用法: /wca绑定 <姓名或WCAID>\n"
+                "示例: /wca绑定 2026LIHU01"
+            ).use_t2i(False)
+            return
+
+        normalized_wca_id = normalize_wca_id(search_input)
+
+        try:
+            if normalized_wca_id:
+                persons = await self.query.search_person(normalized_wca_id)
+                if not persons:
+                    yield event.plain_result(f"没有找到 WCAID 为 {normalized_wca_id} 的选手哦").use_t2i(False)
+                    return
+                picked = None
+                for item in persons:
+                    person_info = item.get("person", {}) if isinstance(item, dict) else {}
+                    if person_info.get("wca_id", "").upper() == normalized_wca_id:
+                        picked = item
+                        break
+                picked = picked or persons[0]
+            else:
+                persons = await self.query.search_person(search_input)
+                if not persons:
+                    yield event.plain_result(f"没有找到名字是 {search_input} 的选手哦").use_t2i(False)
+                    return
+                if len(persons) > 1:
+                    lines = ["找到多个同名选手啦，请改用 WCAID 绑定喵：", ""]
+                    for i, item in enumerate(persons[:10], 1):
+                        person_info = item.get("person", {}) if isinstance(item, dict) else {}
+                        person_id = person_info.get("wca_id", "未知")
+                        person_name = person_info.get("name", "未知")
+                        country = person_info.get("country_iso2", "")
+                        country_str = f" [{country}]" if country else ""
+                        lines.append(f"{i}. {person_name} ({person_id}){country_str}")
+                    if len(persons) > 10:
+                        lines.append(f"\n... 还有 {len(persons) - 10} 个结果未显示哦")
+                    yield event.plain_result("\n".join(lines)).use_t2i(False)
+                    return
+                picked = persons[0]
+
+            person_info = picked.get("person", {}) if isinstance(picked, dict) else {}
+            person_id = person_info.get("wca_id", "")
+            person_name = person_info.get("name", "未知")
+            if not person_id:
+                yield event.plain_result("哎呀，选手信息不完整，暂时没法绑定呢").use_t2i(False)
+                return
+
+            self.bindings.set(str(qq_id), person_id)
+            yield event.plain_result(
+                f"绑定成功啦喵~\n你的 QQ：{qq_id}\nWCAID：{person_id}\n姓名：{person_name}"
+            ).use_t2i(False)
+        except Exception as e:
+            logger.error(f"WCA 绑定异常: {e}")
+            yield event.plain_result(f"绑定时出了点小状况呢: {str(e)}").use_t2i(False)
 
 
 class WCANemesisService:
