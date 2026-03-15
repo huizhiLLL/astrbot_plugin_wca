@@ -9,6 +9,8 @@ from .wca_query import WCAQuery, format_wca_time
 
 
 class WCAPicService:
+    IMAGE_SEND_TIMEOUT_SECONDS = 60
+
     def __init__(self, query: WCAQuery, context: Context):
         self.query = query
         self.context = context
@@ -79,7 +81,7 @@ class WCAPicService:
             try:
                 image_path = await self._render_person_records_card(records_data, event)
                 try:
-                    await event.send(event.image_result(image_path))
+                    await self._send_image_with_timeout(event, image_path)
                 except Exception as send_err:
                     logger.error(f"WCA PIC 发送超时或失败: {send_err}")
                     pic_text = self._format_person_records_for_pic(records_data)
@@ -121,6 +123,13 @@ class WCAPicService:
                 "device_scale_factor_level": "ultra",
             },
         )
+
+    async def _send_image_with_timeout(self, event: AstrMessageEvent, image_path: str):
+        image_result = event.image_result(image_path)
+        try:
+            await event.send(image_result, timeout=self.IMAGE_SEND_TIMEOUT_SECONDS)
+        except TypeError:
+            await event.send(image_result)
 
     def _person_card_template(self) -> str:
         return r"""
