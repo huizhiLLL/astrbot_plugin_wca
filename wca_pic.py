@@ -1,4 +1,5 @@
 import asyncio
+import io
 import os
 
 import astrbot.api.message_components as Comp
@@ -6,12 +7,14 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
 from astrbot.core.utils.t2i.renderer import HtmlRenderer
+from PIL import Image
 
 from .wca_query import WCAQuery, format_wca_time
 
 
 class WCAPicService:
     IMAGE_RENDER_TIMEOUT_SECONDS = 60
+    IMAGE_SEND_MAX_BYTES = 1024 * 1024
 
     def __init__(self, query: WCAQuery, context: Context):
         self.query = query
@@ -127,18 +130,26 @@ class WCAPicService:
             options={
                 "full_page": True,
                 "type": "jpeg",
-                "quality": 100,
+                "quality": 85,
                 "scale": "device",
-                "device_scale_factor_level": "ultra",
+                "device_scale_factor_level": "high",
             },
         )
 
     async def _send_image(self, event: AstrMessageEvent, image_path: str):
         file_size = os.path.getsize(image_path)
-        logger.debug(f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes")
+        logger.warning(f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes")
 
         with open(image_path, "rb") as f:
             image_bytes = f.read()
+
+        compressed_bytes = self._compress_image_for_send(image_bytes)
+        if compressed_bytes is not None and len(compressed_bytes) < len(image_bytes):
+            logger.warning(
+                "WCA PIC 图片已压缩后发送: "
+                f"original={len(image_bytes)} bytes, compressed={len(compressed_bytes)} bytes"
+            )
+            image_bytes = compressed_bytes
 
         try:
             await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
@@ -147,6 +158,25 @@ class WCAPicService:
             logger.warning(f"WCA PIC 字节发送失败，回退路径发送: {bytes_err}")
             image_result = event.image_result(image_path)
             await event.send(image_result)
+
+    def _compress_image_for_send(self, image_bytes: bytes) -> bytes | None:
+        if len(image_bytes) <= self.IMAGE_SEND_MAX_BYTES:
+            return None
+
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+
+                if max(img.size) > 1600:
+                    img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
+
+                output = io.BytesIO()
+                img.save(output, format="JPEG", quality=80, optimize=True, progressive=True)
+                return output.getvalue()
+        except Exception as compress_err:
+            logger.warning(f"WCA PIC 图片压缩失败，继续使用原图发送: {compress_err}")
+            return None
 
     def _person_card_template(self) -> str:
         return r"""
