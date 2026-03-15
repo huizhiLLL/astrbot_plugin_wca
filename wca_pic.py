@@ -1,6 +1,7 @@
 import asyncio
 import os
 
+import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
@@ -133,8 +134,19 @@ class WCAPicService:
         )
 
     async def _send_image(self, event: AstrMessageEvent, image_path: str):
-        image_result = event.image_result(image_path)
-        await event.send(image_result)
+        file_size = os.path.getsize(image_path)
+        logger.debug(f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes")
+
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        try:
+            await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
+            logger.debug("WCA PIC 使用内存字节发送成功")
+        except Exception as bytes_err:
+            logger.warning(f"WCA PIC 字节发送失败，回退路径发送: {bytes_err}")
+            image_result = event.image_result(image_path)
+            await event.send(image_result)
 
     def _person_card_template(self) -> str:
         return r"""
