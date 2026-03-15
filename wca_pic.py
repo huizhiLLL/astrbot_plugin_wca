@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from astrbot.api import logger
@@ -9,7 +10,7 @@ from .wca_query import WCAQuery, format_wca_time
 
 
 class WCAPicService:
-    IMAGE_SEND_TIMEOUT_SECONDS = 60
+    IMAGE_RENDER_TIMEOUT_SECONDS = 60
 
     def __init__(self, query: WCAQuery, context: Context):
         self.query = query
@@ -79,9 +80,12 @@ class WCAPicService:
                 return
 
             try:
-                image_path = await self._render_person_records_card(records_data, event)
+                image_path = await asyncio.wait_for(
+                    self._render_person_records_card(records_data, event),
+                    timeout=self.IMAGE_RENDER_TIMEOUT_SECONDS,
+                )
                 try:
-                    await self._send_image_with_timeout(event, image_path)
+                    await self._send_image(event, image_path)
                 except Exception as send_err:
                     logger.error(f"WCA PIC 发送超时或失败: {send_err}")
                     pic_text = self._format_person_records_for_pic(records_data)
@@ -93,6 +97,10 @@ class WCAPicService:
                             logger.debug(f"已清理 WCA 临时图片: {image_path}")
                         except Exception as e:
                             logger.error(f"清理临时图片失败: {e}")
+            except asyncio.TimeoutError:
+                logger.error("WCA PIC 渲染超时")
+                pic_text = self._format_person_records_for_pic(records_data)
+                yield event.plain_result("生成图片用时有点久，先为您展示文字版吧：\n\n" + pic_text).use_t2i(False)
             except Exception as e:
                 logger.error(f"WCA PIC 渲染失败: {e}")
                 pic_text = self._format_person_records_for_pic(records_data)
@@ -124,12 +132,9 @@ class WCAPicService:
             },
         )
 
-    async def _send_image_with_timeout(self, event: AstrMessageEvent, image_path: str):
+    async def _send_image(self, event: AstrMessageEvent, image_path: str):
         image_result = event.image_result(image_path)
-        try:
-            await event.send(image_result, timeout=self.IMAGE_SEND_TIMEOUT_SECONDS)
-        except TypeError:
-            await event.send(image_result)
+        await event.send(image_result)
 
     def _person_card_template(self) -> str:
         return r"""
