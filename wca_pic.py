@@ -1,6 +1,7 @@
 import asyncio
 import io
 import os
+import time
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -130,9 +131,9 @@ class WCAPicService:
             options={
                 "full_page": True,
                 "type": "jpeg",
-                "quality": 85,
+                "quality": 100,
                 "scale": "device",
-                "device_scale_factor_level": "high",
+                "device_scale_factor_level": "ultra",
             },
         )
 
@@ -155,9 +156,124 @@ class WCAPicService:
             await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
             logger.debug("WCA PIC 使用内存字节发送成功")
         except Exception as bytes_err:
+            if await self._handle_potential_send_success(event, bytes_err):
+                return
             logger.warning(f"WCA PIC 字节发送失败，回退路径发送: {bytes_err}")
             image_result = event.image_result(image_path)
-            await event.send(image_result)
+            try:
+                await event.send(image_result)
+            except Exception as path_err:
+                if await self._handle_potential_send_success(event, path_err):
+                    return
+                raise
+
+    async def _handle_potential_send_success(
+        self,
+        event: AstrMessageEvent,
+        send_err: Exception,
+    ) -> bool:
+        if not self._is_potential_success_error(send_err):
+            return False
+
+        group_id = event.get_group_id()
+        if not group_id:
+            return False
+
+        logger.warning(
+            f"WCA PIC 命中疑似假失败，进入观察期: {send_err}"
+        )
+        await asyncio.sleep(10)
+
+        if await self._was_image_sent_recently(event, seconds=30):
+            logger.info("WCA PIC 已通过历史消息确认图片实际送达，拦截后续降级")
+            return True
+
+        logger.warning("WCA PIC 观察期结束，未确认图片送达")
+        return False
+
+    def _is_potential_success_error(self, err: Exception) -> bool:
+        error_str = str(err).lower()
+        return "timeout" in error_str or "retcode=1200" in error_str or "1200" in error_str
+
+    async def _was_image_sent_recently(self, event: AstrMessageEvent, seconds: int = 30) -> bool:
+        group_id = event.get_group_id()
+        if not group_id:
+            return False
+
+        history = await self._get_group_msg_history(event, group_id, count=50)
+        if not history:
+            return False
+
+        messages = history.get("messages", history) if isinstance(history, dict) else history
+        if not isinstance(messages, list):
+            return False
+
+        self_id = str(event.get_self_id() or "")
+        now = time.time()
+
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+
+            msg_time = msg.get("time", 0)
+            try:
+                if now - float(msg_time) > seconds:
+                    break
+            except Exception:
+                continue
+
+            user_id = str(msg.get("user_id", msg.get("sender", {}).get("user_id", "")))
+            if self_id and user_id != self_id:
+                continue
+
+            message_chain = msg.get("message", [])
+            if isinstance(message_chain, str):
+                continue
+
+            for seg in message_chain:
+                if isinstance(seg, dict) and seg.get("type") == "image":
+                    return True
+
+        return False
+
+    async def _get_group_msg_history(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        count: int = 50,
+    ):
+        bot = getattr(event, "bot", None)
+        if bot is None:
+            return None
+
+        try:
+            if hasattr(bot, "get_group_msg_history"):
+                return await bot.get_group_msg_history(group_id=int(group_id), count=count)
+        except Exception as e:
+            logger.warning(f"WCA PIC 读取群历史失败(get_group_msg_history): {e}")
+
+        try:
+            api = getattr(bot, "api", None)
+            if api is not None and hasattr(api, "call_action"):
+                return await api.call_action(
+                    "get_group_msg_history",
+                    group_id=int(group_id),
+                    count=count,
+                )
+        except Exception as e:
+            logger.warning(f"WCA PIC 读取群历史失败(api.call_action): {e}")
+
+        try:
+            if hasattr(bot, "call_action"):
+                return await bot.call_action(
+                    "get_group_msg_history",
+                    group_id=int(group_id),
+                    count=count,
+                )
+        except Exception as e:
+            logger.warning(f"WCA PIC 读取群历史失败(call_action): {e}")
+
+        return None
 
     def _compress_image_for_send(self, image_bytes: bytes) -> bytes | None:
         if len(image_bytes) <= self.IMAGE_SEND_MAX_BYTES:
