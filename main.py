@@ -8,7 +8,7 @@ from .wca_query import WCAQuery, WCACommandService, WCABindCommandService, WCANe
 from .wca_pk import WCAPKService
 from .wca_recent_competitions import RecentCompetitionsService
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.6")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.7")
 class WCAPlugin(Star):
     """WCA 成绩查询插件"""
     
