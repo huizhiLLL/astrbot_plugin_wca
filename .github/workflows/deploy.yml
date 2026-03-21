@@ -3,7 +3,7 @@ name: Deploy astrbot_plugin_wca
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 jobs:
