@@ -8,7 +8,7 @@ from astrbot.api.star import Context
 from astrbot.core.utils.t2i.renderer import HtmlRenderer
 
 
-TEMPLATE_PATH = Path(__file__).with_name("templates").joinpath("cube_help.html")
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent.joinpath("templates", "cube_help.html")
 
 
 class WCACubeHelpService:

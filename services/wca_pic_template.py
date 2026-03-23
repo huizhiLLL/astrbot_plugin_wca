@@ -4,7 +4,7 @@ from pathlib import Path
 from ..core.wca_formatting import format_wca_time
 
 
-TEMPLATE_PATH = Path(__file__).with_name("templates").joinpath("person_card.html")
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent.joinpath("templates", "person_card.html")
 
 EVENT_CN_MAP: dict[str, str] = {
     "222": "二阶",
