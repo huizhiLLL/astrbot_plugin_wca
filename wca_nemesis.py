@@ -150,13 +150,13 @@ class WCANemesisService:
 
         person_name = person_info.get("name", "未知")
         continent = str(nemesis_data.get("continent", "")).strip()
-        continent_label = f"同洲（{continent}）" if continent else "同洲"
+        continent_label = f"洲" if continent else "洲"
 
         title = f"选手 {person_name} ({person_id}) 的宿敌结果出来啦："
         summary = (
             f"世界：{world_count}人，"
             f"{continent_label}：{continent_count}人，"
-            f"同国家/地区：{country_count}人"
+            f"地区：{country_count}人"
         )
 
         details: list[str] = []
@@ -165,7 +165,7 @@ class WCANemesisService:
         if 0 < continent_count <= 10:
             details.append(f"{continent_label}：\n" + self._format_people(continent_list))
         if 0 < country_count <= 10:
-            details.append("同国家/地区：\n" + self._format_people(country_list))
+            details.append("地区：\n" + self._format_people(country_list))
 
         return "\n".join([title, summary] + (["", "\n\n".join(details)] if details else []))
 
