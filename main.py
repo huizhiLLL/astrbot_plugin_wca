@@ -2,20 +2,23 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 
-from .wca_bindings import WCABindingStore
-from .wca_pic import WCAPicService
-from .wca_query import (
+from .clients.one_api import OneRecordHandler, PersonalRecordAPIClient
+from .core.wca_bindings import WCABindingStore
+from .core.wca_query import (
     WCAQuery,
     WCACommandService,
     WCABindCommandService,
 )
-from .wca_nemesis import WCANemesisService, WCAVersionService
-from .wca_pk import WCAPKService
-from .wca_recent_competitions import RecentCompetitionsService
+from .services.wca_cross_platform import WCAOneService, WCAPRPKService, WCAPRService
+from .services.wca_help import WCACubeHelpService
+from .services.wca_nemesis import WCANemesisService, WCAVersionService
+from .services.wca_pic import WCAPicService
+from .services.wca_pk import WCAPKService
+from .services.wca_recent_competitions import RecentCompetitionsService
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.10")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.1")
 class WCAPlugin(Star):
-    """WCA 成绩查询插件"""
+    """WCA 与 one 成绩查询插件"""
     
     def __init__(self, context: Context):
         super().__init__(context)
@@ -28,6 +31,12 @@ class WCAPlugin(Star):
         self.recent_competitions: RecentCompetitionsService | None = None
         self.wca_nemesis: WCANemesisService | None = None
         self.wca_version: WCAVersionService | None = None
+        self.one_client: PersonalRecordAPIClient | None = None
+        self.one_handler: OneRecordHandler | None = None
+        self.cube_help_service: WCACubeHelpService | None = None
+        self.one_service: WCAOneService | None = None
+        self.pr_service: WCAPRService | None = None
+        self.prpk_service: WCAPRPKService | None = None
         self.nemesis_api_base = "https://wca.huizhi.pro"
     
     async def initialize(self):
@@ -42,10 +51,25 @@ class WCAPlugin(Star):
             self.recent_competitions = RecentCompetitionsService()
             self.wca_nemesis = WCANemesisService(self.wca_query, self.nemesis_api_base)
             self.wca_version = WCAVersionService(self.nemesis_api_base)
+            self.one_client = PersonalRecordAPIClient()
+            self.one_handler = OneRecordHandler(self.one_client)
+            self.cube_help_service = WCACubeHelpService(self.context)
+            self.one_service = WCAOneService(self.one_client, self.one_handler)
+            self.pr_service = WCAPRService(self.wca_query, self.one_client, self.one_handler)
+            self.prpk_service = WCAPRPKService(self.wca_query, self.one_client, self.one_handler)
             logger.info("WCA 插件初始化完成")
                 
         except Exception as e:
             logger.error(f"WCA 插件初始化失败: {e}")
+
+    @filter.command("cube帮助")
+    async def cube_help_command(self, event: AstrMessageEvent):
+        """显示魔方相关命令帮助"""
+        if not self.cube_help_service:
+            yield event.plain_result("哎呀，初始化帮助页出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.cube_help_service.handle(event):
+            yield result
     
     @filter.command("wca")
     async def wca_command(self, event: AstrMessageEvent):
@@ -78,6 +102,33 @@ class WCAPlugin(Star):
             return
 
         async for result in self.wca_pic.handle(event):
+            yield result
+
+    @filter.command("one", alias={"ONE"})
+    async def one_command(self, event: AstrMessageEvent):
+        """查询 one 平台个人成绩"""
+        if not self.one_service:
+            yield event.plain_result("哎呀，初始化 one 查询出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.one_service.handle(event):
+            yield result
+
+    @filter.command("pr")
+    async def pr_command(self, event: AstrMessageEvent):
+        """跨平台 PR 查询"""
+        if not self.pr_service:
+            yield event.plain_result("哎呀，初始化 PR 查询出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.pr_service.handle(event):
+            yield result
+
+    @filter.command("prpk")
+    async def prpk_command(self, event: AstrMessageEvent):
+        """跨平台 PR PK 查询"""
+        if not self.prpk_service:
+            yield event.plain_result("哎呀，初始化 PRPK 查询出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.prpk_service.handle(event):
             yield result
     
     @filter.command("宿敌")
@@ -130,4 +181,6 @@ class WCAPlugin(Star):
     
     async def terminate(self):
         """插件销毁"""
+        if self.one_client:
+            await self.one_client.close()
         return

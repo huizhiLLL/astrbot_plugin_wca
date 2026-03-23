@@ -3,8 +3,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
-from .wca_person_lookup import WCAPersonLookupService
-from .wca_query import WCAQuery, format_wca_time, EVENT_ID_MAP
+from ..core.wca_formatting import EVENT_ID_MAP, format_wca_time
+from ..core.wca_person_lookup import WCAPersonLookupService
+from ..core.wca_query import WCAQuery
 
 
 @dataclass

@@ -2,8 +2,8 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
-from .wca_person_lookup import WCAPersonLookupService
-from .wca_query import WCAQuery
+from ..core.wca_person_lookup import WCAPersonLookupService
+from ..core.wca_query import WCAQuery
 
 
 class WCANemesisApiClient:

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from .wca_query import format_wca_time
+from ..core.wca_formatting import format_wca_time
 
 
 TEMPLATE_PATH = Path(__file__).with_name("templates").joinpath("person_card.html")
