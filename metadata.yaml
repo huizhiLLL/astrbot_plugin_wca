@@ -1,6 +1,6 @@
 name: astrbot_plugin_wca
 display_name: WCA查询
 desc: 包含个人纪录查询、宿敌查询、近期赛事查询以及选手pk。
-version: v1.0.7
+version: v1.0.10
 author: huizhiLLL
 repo: https://github.com/huizhiLLL/astrbot_plugin_wca

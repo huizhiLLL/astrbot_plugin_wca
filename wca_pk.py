@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
+from .wca_person_lookup import WCAPersonLookupService
 from .wca_query import WCAQuery, format_wca_time, EVENT_ID_MAP
 
 
@@ -18,18 +19,14 @@ class WCAPKService:
 
     def __init__(self, query: WCAQuery):
         self.query = query
+        self.lookup = WCAPersonLookupService(query)
 
     async def _resolve_person(self, keyword: str) -> Tuple[Optional[Dict[str, Any]], str]:
         """根据 ID 或姓名解析唯一选手（调用 WCA API）"""
-        persons = await self.query.search_person(keyword)
-        if not persons:
-            return None, "not_found"
-        if len(persons) == 1:
-            return persons[0], "ok"
-        exact = [p for p in persons if p.get("person", {}).get("name") == keyword]
-        if len(exact) == 1:
-            return exact[0], "ok"
-        return None, "ambiguous"
+        result = await self.lookup.resolve_unique(keyword, prefer_exact_name=True)
+        if result.status == "ok":
+            return result.picked, "ok"
+        return None, result.status
 
     async def _build_player_record(self, person: Dict[str, Any]) -> PlayerRecord:
         person_info = person.get("person", person)

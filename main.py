@@ -4,11 +4,16 @@ from astrbot.api import logger
 
 from .wca_bindings import WCABindingStore
 from .wca_pic import WCAPicService
-from .wca_query import WCAQuery, WCACommandService, WCABindCommandService, WCANemesisService
+from .wca_query import (
+    WCAQuery,
+    WCACommandService,
+    WCABindCommandService,
+)
+from .wca_nemesis import WCANemesisService, WCAVersionService
 from .wca_pk import WCAPKService
 from .wca_recent_competitions import RecentCompetitionsService
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.7")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.0.10")
 class WCAPlugin(Star):
     """WCA 成绩查询插件"""
     
@@ -22,6 +27,7 @@ class WCAPlugin(Star):
         self.wca_pk: WCAPKService | None = None
         self.recent_competitions: RecentCompetitionsService | None = None
         self.wca_nemesis: WCANemesisService | None = None
+        self.wca_version: WCAVersionService | None = None
         self.nemesis_api_base = "https://wca.huizhi.pro"
     
     async def initialize(self):
@@ -35,6 +41,7 @@ class WCAPlugin(Star):
             self.wca_pk = WCAPKService(self.wca_query)
             self.recent_competitions = RecentCompetitionsService()
             self.wca_nemesis = WCANemesisService(self.wca_query, self.nemesis_api_base)
+            self.wca_version = WCAVersionService(self.nemesis_api_base)
             logger.info("WCA 插件初始化完成")
                 
         except Exception as e:
@@ -83,6 +90,18 @@ class WCAPlugin(Star):
             yield event.plain_result("哎呀，初始化 WCA 查询出错啦，请稍后再试哦！").use_t2i(False)
             return
         async for result in self.wca_nemesis.handle(event):
+            yield result
+
+    @filter.command("版本")
+    async def wca_version_command(self, event: AstrMessageEvent):
+        """数据库版本查询：\n
+        /版本
+        返回宿敌后端当前使用的数据库导出日期
+        """
+        if not self.wca_version:
+            yield event.plain_result("哎呀，初始化版本查询出错啦，请稍后再试哦！").use_t2i(False)
+            return
+        async for result in self.wca_version.handle(event):
             yield result
 
     @filter.command("wcapk")
