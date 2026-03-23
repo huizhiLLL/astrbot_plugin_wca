@@ -154,8 +154,8 @@ class WCANemesisService:
 
         title = f"选手 {person_name} ({person_id}) 的宿敌结果出来啦："
         summary = (
-            f"世界：{world_count}人，"
-            f"{continent_label}：{continent_count}人，"
+            f"世界：{world_count}人 "
+            f"{continent_label}：{continent_count}人 "
             f"地区：{country_count}人"
         )
 
@@ -163,7 +163,7 @@ class WCANemesisService:
         if 0 < world_count <= 10:
             details.append("世界：\n" + self._format_people(world_list))
         if 0 < continent_count <= 10:
-            details.append(f"{continent_label}：\n" + self._format_people(continent_list))
+            details.append(f"洲：\n" + self._format_people(continent_list))
         if 0 < country_count <= 10:
             details.append("地区：\n" + self._format_people(country_list))
 
