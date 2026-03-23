@@ -152,10 +152,10 @@ class WCANemesisService:
         continent = str(nemesis_data.get("continent", "")).strip()
         continent_label = f"洲" if continent else "洲"
 
-        title = f"选手 {person_name} ({person_id}) 的宿敌结果出来啦："
+        title = f"选手({person_id}) 的宿敌结果出来啦："
         summary = (
-            f"世界：{world_count}人 "
-            f"{continent_label}：{continent_count}人 "
+            f"世界：{world_count}人，"
+            f"{continent_label}：{continent_count}人，"
             f"地区：{country_count}人"
         )
 
