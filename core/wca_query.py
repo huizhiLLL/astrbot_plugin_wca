@@ -241,8 +241,6 @@ class WCACommandService:
             ).use_t2i(False)
             return
 
-        yield event.plain_result("正在查询选手信息，请稍候哦...").use_t2i(False)
-
         try:
             result = await self.lookup.resolve_unique(search_input)
             if result.status == "not_found":
