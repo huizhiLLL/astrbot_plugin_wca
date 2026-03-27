@@ -55,7 +55,7 @@ class WCAPersonLookupService:
         persons: list[dict[str, Any]],
         usage: str,
         *,
-        intro: str = "好准哦，找到了多个匹配的选手，请使用 WCAID 查询具体哪位呢：\n",
+        intro: str = "找到了多个匹配的选手，请使用 WCAID 查询具体哪位呢：\n",
     ) -> str:
         lines = [intro]
         for i, item in enumerate(persons[:10], 1):

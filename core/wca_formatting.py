@@ -227,10 +227,6 @@ def format_person_records_text(records_data: dict[str, Any]) -> str:
 
 
 def _rank_label(world_rank: object, continent_rank: object, country_rank: object) -> str:
-    if isinstance(world_rank, int) and world_rank <= 100 and world_rank > 0:
-        return f"WR{world_rank}"
-    if isinstance(continent_rank, int) and continent_rank <= 100 and continent_rank > 0:
-        return f"CR{continent_rank}"
     if isinstance(country_rank, int) and country_rank <= 200 and country_rank > 0:
         return f"NR{country_rank}"
     return "-"
