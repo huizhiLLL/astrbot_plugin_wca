@@ -15,6 +15,7 @@ from .wca_pic_template import (
     format_person_records_for_pic,
     get_person_card_template,
 )
+from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
@@ -29,10 +30,9 @@ class WCAPicService:
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        message_str = event.message_str.strip()
-        parts = message_str.split(maxsplit=1)
+        search_input = strip_first_command_token(event.message_str)
 
-        if len(parts) < 2:
+        if not search_input:
             yield event.plain_result(
                 "请提供 WCAID 或姓名哦\n"
                 "用法: /wcapic [WCAID/姓名]\n"
@@ -40,9 +40,9 @@ class WCAPicService:
                 "示例: /wcapic 李华"
             ).use_t2i(False)
             return
-
-        search_input = parts[1].strip()
-        yield event.plain_result("正在为您生成 WCA 成绩图，请稍候哦...（查看原图更加清晰~）").use_t2i(False)
+        yield event.plain_result(
+            "正在为您生成 WCA 成绩图，请稍候哦...（查看原图更加清晰~）"
+        ).use_t2i(False)
 
         try:
             result = await self.lookup.resolve_unique(search_input)
@@ -67,7 +67,9 @@ class WCAPicService:
             person_id = person_info.get("wca_id", "") or person_info.get("id", "")
 
             if not person_id:
-                yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
+                yield event.plain_result(
+                    "哎呀，选手信息不完整，无法查询成绩哦"
+                ).use_t2i(False)
                 return
 
             records_data = await self.query.get_person_best_records(
@@ -92,7 +94,9 @@ class WCAPicService:
                 except Exception as send_err:
                     logger.error(f"WCA PIC 发送超时或失败: {send_err}")
                     pic_text = format_person_records_for_pic(records_data)
-                    yield event.plain_result("哎呀，图片发送超时啦，先为您展示文字版吧：\n\n" + pic_text).use_t2i(False)
+                    yield event.plain_result(
+                        "哎呀，图片发送超时啦，先为您展示文字版吧：\n\n" + pic_text
+                    ).use_t2i(False)
                 finally:
                     if image_path and os.path.exists(image_path):
                         try:
@@ -103,17 +107,25 @@ class WCAPicService:
             except asyncio.TimeoutError:
                 logger.error("WCA PIC 渲染超时")
                 pic_text = format_person_records_for_pic(records_data)
-                yield event.plain_result("生成图片用时有点久，先为您展示文字版吧：\n\n" + pic_text).use_t2i(False)
+                yield event.plain_result(
+                    "生成图片用时有点久，先为您展示文字版吧：\n\n" + pic_text
+                ).use_t2i(False)
             except Exception as e:
                 logger.error(f"WCA PIC 渲染失败: {e}")
                 pic_text = format_person_records_for_pic(records_data)
-                yield event.plain_result("渲染图片时出了点小状况呢，先为您展示文字版吧：\n\n" + pic_text).use_t2i(False)
+                yield event.plain_result(
+                    "渲染图片时出了点小状况呢，先为您展示文字版吧：\n\n" + pic_text
+                ).use_t2i(False)
 
         except Exception as e:
             logger.error(f"WCA PIC 查询异常: {e}")
-            yield event.plain_result(f"生成图片时出了一点小状况呢: {str(e)}").use_t2i(False)
+            yield event.plain_result(f"生成图片时出了一点小状况呢: {str(e)}").use_t2i(
+                False
+            )
 
-    async def _render_person_records_card(self, records_data: dict, event: AstrMessageEvent) -> str:
+    async def _render_person_records_card(
+        self, records_data: dict, event: AstrMessageEvent
+    ) -> str:
         cfg = self.context.get_config(umo=event.unified_msg_origin)
         endpoint = cfg.get("t2i_endpoint") if isinstance(cfg, dict) else None
 
@@ -137,7 +149,9 @@ class WCAPicService:
 
     async def _send_image(self, event: AstrMessageEvent, image_path: str):
         file_size = os.path.getsize(image_path)
-        logger.warning(f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes")
+        logger.warning(
+            f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes"
+        )
 
         with open(image_path, "rb") as f:
             image_bytes = f.read()
@@ -177,9 +191,7 @@ class WCAPicService:
         if not group_id:
             return False
 
-        logger.warning(
-            f"WCA PIC 命中疑似假失败，进入观察期: {send_err}"
-        )
+        logger.warning(f"WCA PIC 命中疑似假失败，进入观察期: {send_err}")
         await asyncio.sleep(10)
 
         if await self._was_image_sent_recently(event, seconds=30):
@@ -191,9 +203,13 @@ class WCAPicService:
 
     def _is_potential_success_error(self, err: Exception) -> bool:
         error_str = str(err).lower()
-        return "timeout" in error_str or "retcode=1200" in error_str or "1200" in error_str
+        return (
+            "timeout" in error_str or "retcode=1200" in error_str or "1200" in error_str
+        )
 
-    async def _was_image_sent_recently(self, event: AstrMessageEvent, seconds: int = 30) -> bool:
+    async def _was_image_sent_recently(
+        self, event: AstrMessageEvent, seconds: int = 30
+    ) -> bool:
         group_id = event.get_group_id()
         if not group_id:
             return False
@@ -202,7 +218,9 @@ class WCAPicService:
         if not history:
             return False
 
-        messages = history.get("messages", history) if isinstance(history, dict) else history
+        messages = (
+            history.get("messages", history) if isinstance(history, dict) else history
+        )
         if not isinstance(messages, list):
             return False
 
@@ -246,7 +264,9 @@ class WCAPicService:
 
         try:
             if hasattr(bot, "get_group_msg_history"):
-                return await bot.get_group_msg_history(group_id=int(group_id), count=count)
+                return await bot.get_group_msg_history(
+                    group_id=int(group_id), count=count
+                )
         except Exception as e:
             logger.warning(f"WCA PIC 读取群历史失败(get_group_msg_history): {e}")
 
@@ -286,7 +306,9 @@ class WCAPicService:
                     img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
 
                 output = io.BytesIO()
-                img.save(output, format="JPEG", quality=80, optimize=True, progressive=True)
+                img.save(
+                    output, format="JPEG", quality=80, optimize=True, progressive=True
+                )
                 return output.getvalue()
         except Exception as compress_err:
             logger.warning(f"WCA PIC 图片压缩失败，继续使用原图发送: {compress_err}")

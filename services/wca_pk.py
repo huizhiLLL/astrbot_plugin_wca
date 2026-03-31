@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
+from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_formatting import EVENT_ID_MAP, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -16,13 +17,15 @@ class PlayerRecord:
 
 
 class WCAPKService:
-    """选手 PK """
+    """选手 PK"""
 
     def __init__(self, query: WCAQuery):
         self.query = query
         self.lookup = WCAPersonLookupService(query)
 
-    async def _resolve_person(self, keyword: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    async def _resolve_person(
+        self, keyword: str
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
         """根据 ID 或姓名解析唯一选手（调用 WCA API）"""
         result = await self.lookup.resolve_unique(keyword, prefer_exact_name=True)
         if result.status == "ok":
@@ -39,10 +42,13 @@ class WCAPKService:
         average_map = {r["event_id"]: r for r in data["average_records"]}
         return PlayerRecord(person_info, single_map, average_map)
 
-    def _compare(self, a_val: Any, b_val: Any, event_format: str = "time") -> Tuple[str, str, int, int]:
+    def _compare(
+        self, a_val: Any, b_val: Any, event_format: str = "time"
+    ) -> Tuple[str, str, int, int]:
         """比较两个成绩值（默认厘秒，越小越好；最少步用 number 格式）
         返回: (a_text, b_text, a_score, b_score)
         """
+
         def to_int(v: Any) -> int:
             try:
                 return int(v)
@@ -90,7 +96,12 @@ class WCAPKService:
         r2 = await self._build_player_record(p2)
 
         # 事件并集
-        all_events = set(r1.single_map.keys()) | set(r1.average_map.keys()) | set(r2.single_map.keys()) | set(r2.average_map.keys())
+        all_events = (
+            set(r1.single_map.keys())
+            | set(r1.average_map.keys())
+            | set(r2.single_map.keys())
+            | set(r2.average_map.keys())
+        )
         if not all_events:
             return "", "这两位选手好像都没有成绩记录呢，没法对比呀~"
 
@@ -122,7 +133,7 @@ class WCAPKService:
             else:
                 # 如果没有 event_name，使用 event_id 并映射
                 event_name = EVENT_ID_MAP.get(e_id, e_id)
-            
+
             # event_name 已经是简化格式，不需要再次映射
 
             # 单次
@@ -137,7 +148,9 @@ class WCAPKService:
                 event_format_single = str(a2.get("event_format", "time"))
             a_single_val = s1.get("best", 0) if s1 else 0
             b_single_val = s2.get("best", 0) if s2 else 0
-            a_txt, b_txt, a_pt, b_pt = self._compare(a_single_val, b_single_val, event_format_single)
+            a_txt, b_txt, a_pt, b_pt = self._compare(
+                a_single_val, b_single_val, event_format_single
+            )
             score_a += a_pt
             score_b += b_pt
             star_a = " (☆)" if a_pt > b_pt else ""
@@ -155,18 +168,31 @@ class WCAPKService:
                 event_format_avg = str(s2.get("event_format", "time"))
             a_avg_val = a1.get("best", 0) if a1 else 0
             b_avg_val = a2.get("best", 0) if a2 else 0
-            a_avg_txt, b_avg_txt, a_avg_pt, b_avg_pt = self._compare(a_avg_val, b_avg_val, event_format_avg)
+            a_avg_txt, b_avg_txt, a_avg_pt, b_avg_pt = self._compare(
+                a_avg_val, b_avg_val, event_format_avg
+            )
             score_a += a_avg_pt
             score_b += b_avg_pt
             star_a_avg = " (☆)" if a_avg_pt > b_avg_pt else ""
             star_b_avg = " (★)" if b_avg_pt > a_avg_pt else ""
 
             # 仅当至少一方有成绩才输出
-            if (a_pt or b_pt or a_avg_pt or b_avg_pt or a_txt != "-" or b_txt != "-" or a_avg_txt != "-" or b_avg_txt != "-"):
+            if (
+                a_pt
+                or b_pt
+                or a_avg_pt
+                or b_avg_pt
+                or a_txt != "-"
+                or b_txt != "-"
+                or a_avg_txt != "-"
+                or b_avg_txt != "-"
+            ):
                 event_name_str = str(event_name) if event_name else ""
                 lines.append(f"{event_name_str}  {a_txt}{star_a} || {b_txt}{star_b}")
                 indent_spaces = " " * (len(event_name_str) + 3)
-                lines.append(f"{indent_spaces}  {a_avg_txt}{star_a_avg} || {b_avg_txt}{star_b_avg}")
+                lines.append(
+                    f"{indent_spaces}  {a_avg_txt}{star_a_avg} || {b_avg_txt}{star_b_avg}"
+                )
 
         result_text = "\n".join(lines) if lines else ""
         if score_a > score_b:
@@ -178,16 +204,18 @@ class WCAPKService:
         return result_text, None
 
     async def handle(self, event: AstrMessageEvent):
-        msg = event.message_str.strip()
-        parts = msg.split(maxsplit=2)
-        if len(parts) < 3:
+        args = strip_first_command_token(event.message_str)
+        parts = args.split(maxsplit=1) if args else []
+        if len(parts) < 2:
             yield event.plain_result(
                 "参数不足哦\n用法: /wcapk <选手1> <选手2>\n示例: /wcapk 2026LIHU01 2009ZEMD01"
             ).use_t2i(False)
             return
 
-        p1, p2 = parts[1].strip(), parts[2].strip()
-        yield event.plain_result(f"正在为您对比 {p1} 和 {p2} 的成绩，请稍候哦...").use_t2i(False)
+        p1, p2 = parts[0].strip(), parts[1].strip()
+        yield event.plain_result(
+            f"正在为您对比 {p1} 和 {p2} 的成绩，请稍候哦..."
+        ).use_t2i(False)
         try:
             text, err = await self.compare(p1, p2)
             if err:

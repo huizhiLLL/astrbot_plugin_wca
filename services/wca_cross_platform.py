@@ -5,7 +5,13 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
-from ..clients.one_api import EVENT_ID_TO_CODE, OneRecordHandler, PersonalRecordAPIClient, format_time_ms
+from ..clients.one_api import (
+    EVENT_ID_TO_CODE,
+    OneRecordHandler,
+    PersonalRecordAPIClient,
+    format_time_ms,
+)
+from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_formatting import EVENT_ID_MAP, EVENT_ORDER, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -38,12 +44,16 @@ ONE_EVENT_TO_WCA: dict[str, str] = {
 
 WCA_EVENT_CODES: set[str] = set()
 for event_id in EVENT_ID_MAP.keys():
-    normalized = "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+    normalized = (
+        "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+    )
     WCA_EVENT_CODES.add(normalized)
 
 CROSS_PLATFORM_EVENT_ORDER: list[str] = []
 for event_id in EVENT_ORDER.keys():
-    normalized = "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+    normalized = (
+        "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+    )
     if normalized not in CROSS_PLATFORM_EVENT_ORDER:
         CROSS_PLATFORM_EVENT_ORDER.append(normalized)
 
@@ -63,17 +73,17 @@ class WCAOneService:
         self.handler = handler
 
     async def handle(self, event: AstrMessageEvent):
-        parts = event.message_str.strip().split(maxsplit=1)
-        if len(parts) < 2:
+        search_input = strip_first_command_token(event.message_str)
+        if not search_input:
             yield event.plain_result(
                 "请提供姓名或 oneID 哦\n用法：/one [姓名或ID]\n示例：/one 李华"
             ).use_t2i(False)
             return
 
-        search_input = parts[1].strip()
-
         try:
-            user_id, user_name, error_msg = await self.handler.resolve_user(search_input)
+            user_id, user_name, error_msg = await self.handler.resolve_user(
+                search_input
+            )
             if error_msg:
                 yield event.plain_result(error_msg).use_t2i(False)
                 return
@@ -85,12 +95,16 @@ class WCAOneService:
             records_result = await self.client.get_personal_records(user_id)
             if records_result.get("code") != 10000:
                 error_msg = records_result.get("err", "未知错误")
-                yield event.plain_result(f"呜呜，没拿到成绩记录呢...\n错误：{error_msg}").use_t2i(False)
+                yield event.plain_result(
+                    f"呜呜，没拿到成绩记录呢...\n错误：{error_msg}"
+                ).use_t2i(False)
                 return
 
             rank_data = records_result.get("data", {}).get("rank", []) or []
             if not rank_data:
-                yield event.plain_result(f"{user_name or '这位选手'} 还没有个人记录呢，快去录一个吧~").use_t2i(False)
+                yield event.plain_result(
+                    f"{user_name or '这位选手'} 还没有个人记录呢，快去录一个吧~"
+                ).use_t2i(False)
                 return
 
             if not user_name:
@@ -98,7 +112,10 @@ class WCAOneService:
 
             lines = []
             for record in sorted(rank_data, key=lambda x: x.get("e_id", 0)):
-                event_code = EVENT_ID_TO_CODE.get(record.get("e_id")) or f"项目{record.get('e_id')}"
+                event_code = (
+                    EVENT_ID_TO_CODE.get(record.get("e_id"))
+                    or f"项目{record.get('e_id')}"
+                )
 
                 single_text = "-"
                 avg_text = "-"
@@ -114,7 +131,9 @@ class WCAOneService:
                 lines.append(f"{event_code}  {single_text} || {avg_text}")
 
             if not lines:
-                yield event.plain_result(f"{user_name} 还没有有效个人记录呢，快去录一个吧~").use_t2i(False)
+                yield event.plain_result(
+                    f"{user_name} 还没有有效个人记录呢，快去录一个吧~"
+                ).use_t2i(False)
                 return
 
             header = f"{user_name}（{user_id}）在 one 平台的成绩为：\n"
@@ -126,15 +145,21 @@ class WCAOneService:
 
 
 class WCAPRService:
-    def __init__(self, query: WCAQuery, one_client: PersonalRecordAPIClient, one_handler: OneRecordHandler):
+    def __init__(
+        self,
+        query: WCAQuery,
+        one_client: PersonalRecordAPIClient,
+        one_handler: OneRecordHandler,
+    ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        parts = event.message_str.strip().split(maxsplit=2)
-        if len(parts) < 2:
+        args = strip_first_command_token(event.message_str)
+        parts = args.split(maxsplit=1) if args else []
+        if not parts:
             yield event.plain_result(
                 "哎呀，请提供参数哦~\n"
                 "用法：/pr [姓名]\n"
@@ -143,8 +168,8 @@ class WCAPRService:
             ).use_t2i(False)
             return
 
-        search_input = parts[1].strip()
-        one_id_input = parts[2].strip() if len(parts) >= 3 else None
+        search_input = parts[0].strip()
+        one_id_input = parts[1].strip() if len(parts) >= 2 else None
         player = await self._resolve_player(
             search_input,
             forced_wca_id=search_input if one_id_input else None,
@@ -172,11 +197,15 @@ class WCAPRService:
             return
 
         if not wca_records:
-            yield event.plain_result(f"未找到 {wca_name} ({wca_id}) 的 WCA 成绩记录").use_t2i(False)
+            yield event.plain_result(
+                f"未找到 {wca_name} ({wca_id}) 的 WCA 成绩记录"
+            ).use_t2i(False)
             return
 
         try:
-            one_records_resp = await self.one_client.get_personal_records(player.one_user_id)
+            one_records_resp = await self.one_client.get_personal_records(
+                player.one_user_id
+            )
         except Exception as e:
             logger.error(f"PR 查询 one 异常: {e}")
             yield event.plain_result("查询 one 成绩时出错，请稍后重试").use_t2i(False)
@@ -184,7 +213,9 @@ class WCAPRService:
 
         if one_records_resp.get("code") != 10000:
             one_error = one_records_resp.get("err", "未知错误")
-            yield event.plain_result(f"获取 one 成绩失败\n错误：{one_error}").use_t2i(False)
+            yield event.plain_result(f"获取 one 成绩失败\n错误：{one_error}").use_t2i(
+                False
+            )
             return
 
         lines = self._build_merged_pr_lines(wca_records, one_records_resp)
@@ -192,7 +223,9 @@ class WCAPRService:
             yield event.plain_result("两个平台均无有效成绩").use_t2i(False)
             return
 
-        yield event.plain_result(f"{wca_name}的 PR 成绩如下：\n\n" + "\n".join(lines)).use_t2i(False)
+        yield event.plain_result(
+            f"{wca_name}的 PR 成绩如下：\n\n" + "\n".join(lines)
+        ).use_t2i(False)
 
     async def _resolve_player(
         self,
@@ -208,9 +241,13 @@ class WCAPRService:
         one_error = None
 
         if forced_wca_id:
-            wca_result = await self.lookup.resolve_unique(forced_wca_id, preferred_wca_id=forced_wca_id)
+            wca_result = await self.lookup.resolve_unique(
+                forced_wca_id, preferred_wca_id=forced_wca_id
+            )
         else:
-            wca_result = await self.lookup.resolve_unique(keyword, prefer_exact_name=True)
+            wca_result = await self.lookup.resolve_unique(
+                keyword, prefer_exact_name=True
+            )
 
         if wca_result.status == "ok":
             wca_person = self.lookup.get_person_info(wca_result.picked)
@@ -229,21 +266,35 @@ class WCAPRService:
             else:
                 one_error = f"oneID 无效：{forced_one_id}"
         else:
-            one_user_id, one_user_name, one_error = await self.one_handler.resolve_user(keyword)
+            one_user_id, one_user_name, one_error = await self.one_handler.resolve_user(
+                keyword
+            )
 
-        return ResolvedCrossPlatformPlayer(wca_person, one_user_id, one_user_name, wca_error, one_error)
+        return ResolvedCrossPlatformPlayer(
+            wca_person, one_user_id, one_user_name, wca_error, one_error
+        )
 
-    def _build_merged_pr_lines(self, wca_records: dict[str, Any], one_records_resp: dict[str, Any]) -> list[str]:
+    def _build_merged_pr_lines(
+        self, wca_records: dict[str, Any], one_records_resp: dict[str, Any]
+    ) -> list[str]:
         wca_single, wca_avg, wca_fmt, _ = build_wca_best_maps(wca_records)
         one_single, one_avg = build_one_best_maps(one_records_resp)
 
         all_events = set(wca_single) | set(wca_avg) | set(one_single) | set(one_avg)
         lines: list[str] = []
         for code in sorted(all_events, key=event_order_key):
-            fmt = "number" if code in NUMBER_FORMAT_EVENTS else wca_fmt.get(code, "time")
-            single_value = choose_better_value(wca_single.get(code), one_single.get(code), fmt=fmt, is_average=False)
-            avg_value = choose_better_value(wca_avg.get(code), one_avg.get(code), fmt=fmt, is_average=True)
-            single_text = format_cross_platform_value(single_value, fmt, is_average=False)
+            fmt = (
+                "number" if code in NUMBER_FORMAT_EVENTS else wca_fmt.get(code, "time")
+            )
+            single_value = choose_better_value(
+                wca_single.get(code), one_single.get(code), fmt=fmt, is_average=False
+            )
+            avg_value = choose_better_value(
+                wca_avg.get(code), one_avg.get(code), fmt=fmt, is_average=True
+            )
+            single_text = format_cross_platform_value(
+                single_value, fmt, is_average=False
+            )
             avg_text = format_cross_platform_value(avg_value, fmt, is_average=True)
             if single_text == "-" and avg_text == "-":
                 continue
@@ -252,15 +303,21 @@ class WCAPRService:
 
 
 class WCAPRPKService:
-    def __init__(self, query: WCAQuery, one_client: PersonalRecordAPIClient, one_handler: OneRecordHandler):
+    def __init__(
+        self,
+        query: WCAQuery,
+        one_client: PersonalRecordAPIClient,
+        one_handler: OneRecordHandler,
+    ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        parts = event.message_str.strip().split(maxsplit=4)
-        if len(parts) < 3:
+        args = strip_first_command_token(event.message_str)
+        parts = args.split(maxsplit=3) if args else []
+        if len(parts) < 2:
             yield event.plain_result(
                 "参数不够呢，请提供两个选手哦~\n"
                 "用法：/prpk [选手1] [选手2]\n"
@@ -270,16 +327,34 @@ class WCAPRPKService:
 
         yield event.plain_result("麦麦收到！正在进行 pk 中......").use_t2i(False)
 
-        if len(parts) >= 5:
-            player1 = await self._resolve_player(parts[1].strip(), forced_wca_id=parts[1].strip(), forced_one_id=parts[2].strip())
-            player2 = await self._resolve_player(parts[3].strip(), forced_wca_id=parts[3].strip(), forced_one_id=parts[4].strip())
+        if len(parts) >= 4:
+            player1 = await self._resolve_player(
+                parts[0].strip(),
+                forced_wca_id=parts[0].strip(),
+                forced_one_id=parts[1].strip(),
+            )
+            player2 = await self._resolve_player(
+                parts[2].strip(),
+                forced_wca_id=parts[2].strip(),
+                forced_one_id=parts[3].strip(),
+            )
         else:
-            player1 = await self._resolve_player(parts[1].strip())
-            player2 = await self._resolve_player(parts[2].strip())
+            player1 = await self._resolve_player(parts[0].strip())
+            player2 = await self._resolve_player(parts[1].strip())
 
-        if not player1.wca_person or not player2.wca_person or player1.one_user_id is None or player2.one_user_id is None:
+        if (
+            not player1.wca_person
+            or not player2.wca_person
+            or player1.one_user_id is None
+            or player2.one_user_id is None
+        ):
             lines = ["无法唯一确认选手"]
-            for err in (player1.wca_error, player1.one_error, player2.wca_error, player2.one_error):
+            for err in (
+                player1.wca_error,
+                player1.one_error,
+                player2.wca_error,
+                player2.one_error,
+            ):
                 if err:
                     lines.append(err)
             lines.append("请使用：/prpk [WCAID1] [oneID1] [WCAID2] [oneID2]")
@@ -290,8 +365,12 @@ class WCAPRPKService:
         w2_name = player2.wca_person.get("name", player2.wca_person.get("wca_id", ""))
 
         try:
-            w1_records = await self.query.get_person_best_records(player1.wca_person.get("wca_id", ""))
-            w2_records = await self.query.get_person_best_records(player2.wca_person.get("wca_id", ""))
+            w1_records = await self.query.get_person_best_records(
+                player1.wca_person.get("wca_id", "")
+            )
+            w2_records = await self.query.get_person_best_records(
+                player2.wca_person.get("wca_id", "")
+            )
         except Exception as e:
             logger.error(f"PRPK 查询 WCA 异常: {e}")
             yield event.plain_result("查询 WCA 成绩时出错，请稍后重试").use_t2i(False)
@@ -307,7 +386,9 @@ class WCAPRPKService:
             yield event.plain_result(f"{w2_name} 无成绩记录").use_t2i(False)
             return
 
-        lines = build_prpk_lines(w1_name, w2_name, w1_records, w2_records, one1_resp, one2_resp)
+        lines = build_prpk_lines(
+            w1_name, w2_name, w1_records, w2_records, one1_resp, one2_resp
+        )
         yield event.plain_result("\n".join(lines)).use_t2i(False)
 
     async def _resolve_player(
@@ -324,9 +405,13 @@ class WCAPRPKService:
         one_error = None
 
         if forced_wca_id:
-            wca_result = await self.lookup.resolve_unique(forced_wca_id, preferred_wca_id=forced_wca_id)
+            wca_result = await self.lookup.resolve_unique(
+                forced_wca_id, preferred_wca_id=forced_wca_id
+            )
         else:
-            wca_result = await self.lookup.resolve_unique(keyword, prefer_exact_name=True)
+            wca_result = await self.lookup.resolve_unique(
+                keyword, prefer_exact_name=True
+            )
 
         if wca_result.status == "ok":
             wca_person = self.lookup.get_person_info(wca_result.picked)
@@ -345,9 +430,13 @@ class WCAPRPKService:
             else:
                 one_error = f"oneID 无效：{forced_one_id}"
         else:
-            one_user_id, one_user_name, one_error = await self.one_handler.resolve_user(keyword)
+            one_user_id, one_user_name, one_error = await self.one_handler.resolve_user(
+                keyword
+            )
 
-        return ResolvedCrossPlatformPlayer(wca_person, one_user_id, one_user_name, wca_error, one_error)
+        return ResolvedCrossPlatformPlayer(
+            wca_person, one_user_id, one_user_name, wca_error, one_error
+        )
 
 
 def normalize_wca_event_id(event_id: str | None) -> str | None:
@@ -387,7 +476,9 @@ def one_time_to_centiseconds(time_value: int | None) -> int | None:
         return None
 
 
-def one_value_to_number_or_centiseconds(time_value: int | None, event_code: str) -> int | None:
+def one_value_to_number_or_centiseconds(
+    time_value: int | None, event_code: str
+) -> int | None:
     if not time_value or time_value == 999999:
         return None
 
@@ -407,7 +498,9 @@ def one_value_to_number_or_centiseconds(time_value: int | None, event_code: str)
     return one_time_to_centiseconds(time_value)
 
 
-def choose_better_value(v1: int | None, v2: int | None, *, fmt: str, is_average: bool) -> int | None:
+def choose_better_value(
+    v1: int | None, v2: int | None, *, fmt: str, is_average: bool
+) -> int | None:
     if v1 is None:
         return v2
     if v2 is None:
@@ -419,7 +512,9 @@ def choose_better_value(v1: int | None, v2: int | None, *, fmt: str, is_average:
     return v1 if v1 <= v2 else v2
 
 
-def format_cross_platform_value(value: int | None, fmt: str, *, is_average: bool) -> str:
+def format_cross_platform_value(
+    value: int | None, fmt: str, *, is_average: bool
+) -> str:
     if value is None:
         return "-"
     if fmt == "number" and is_average:
@@ -442,17 +537,25 @@ def build_wca_best_maps(records: dict[str, Any] | None):
         code = normalize_wca_event_id(str(record.get("event_id", "")))
         value = record.get("best")
         if code in WCA_EVENT_CODES and isinstance(value, int) and value > 0:
-            single_map[code] = min(single_map.get(code, value), value) if code in single_map else value
+            single_map[code] = (
+                min(single_map.get(code, value), value) if code in single_map else value
+            )
             fmt_map[code] = str(record.get("event_format", "time"))
-            rank_map[code] = min(rank_map.get(code, 999), int(record.get("event_rank", 999)))
+            rank_map[code] = min(
+                rank_map.get(code, 999), int(record.get("event_rank", 999))
+            )
 
     for record in records.get("average_records", []):
         code = normalize_wca_event_id(str(record.get("event_id", "")))
         value = record.get("best")
         if code in WCA_EVENT_CODES and isinstance(value, int) and value > 0:
-            avg_map[code] = min(avg_map.get(code, value), value) if code in avg_map else value
+            avg_map[code] = (
+                min(avg_map.get(code, value), value) if code in avg_map else value
+            )
             fmt_map.setdefault(code, str(record.get("event_format", "time")))
-            rank_map[code] = min(rank_map.get(code, 999), int(record.get("event_rank", 999)))
+            rank_map[code] = min(
+                rank_map.get(code, 999), int(record.get("event_rank", 999))
+            )
 
     return single_map, avg_map, fmt_map, rank_map
 
@@ -460,20 +563,34 @@ def build_wca_best_maps(records: dict[str, Any] | None):
 def build_one_best_maps(resp: dict[str, Any] | None):
     single_map: dict[str, int] = {}
     avg_map: dict[str, int] = {}
-    rank_data = resp.get("data", {}).get("rank", []) if resp and resp.get("code") == 10000 else []
+    rank_data = (
+        resp.get("data", {}).get("rank", [])
+        if resp and resp.get("code") == 10000
+        else []
+    )
 
     for record in rank_data:
         event_code_raw = EVENT_ID_TO_CODE.get(record.get("e_id"))
         code = normalize_one_event_code(event_code_raw)
         if not code:
             continue
-        single_value = one_value_to_number_or_centiseconds(record.get("time_single"), code)
+        single_value = one_value_to_number_or_centiseconds(
+            record.get("time_single"), code
+        )
         avg_value = one_value_to_number_or_centiseconds(record.get("time_avg"), code)
 
         if single_value is not None:
-            single_map[code] = min(single_map.get(code, single_value), single_value) if code in single_map else single_value
+            current_single = single_map.get(code)
+            single_map[code] = (
+                min(current_single, single_value)
+                if current_single is not None
+                else single_value
+            )
         if avg_value is not None:
-            avg_map[code] = min(avg_map.get(code, avg_value), avg_value) if code in avg_map else avg_value
+            current_avg = avg_map.get(code)
+            avg_map[code] = (
+                min(current_avg, avg_value) if current_avg is not None else avg_value
+            )
 
     return single_map, avg_map
 
@@ -487,7 +604,9 @@ def event_order_key(code: str):
     return (_event_order_index().get(code, 999), code)
 
 
-async def safe_fetch_one_records(client: PersonalRecordAPIClient, user_id: int) -> dict[str, Any] | None:
+async def safe_fetch_one_records(
+    client: PersonalRecordAPIClient, user_id: int
+) -> dict[str, Any] | None:
     try:
         return await client.get_personal_records(user_id)
     except Exception as e:
@@ -521,14 +640,27 @@ def build_prpk_lines(
 
     for code in sorted(all_events, key=event_order_key):
         fmt = a_fmt.get(code) or b_fmt.get(code) or "time"
-        s1, s2, p1, p2 = compare_values(a_s.get(code), b_s.get(code), fmt=fmt, is_average=False)
+        s1, s2, p1, p2 = compare_values(
+            a_s.get(code), b_s.get(code), fmt=fmt, is_average=False
+        )
         score_a += p1
         score_b += p2
-        avg1, avg2, ap1, ap2 = compare_values(a_a.get(code), b_a.get(code), fmt=fmt, is_average=True)
+        avg1, avg2, ap1, ap2 = compare_values(
+            a_a.get(code), b_a.get(code), fmt=fmt, is_average=True
+        )
         score_a += ap1
         score_b += ap2
 
-        if p1 or p2 or ap1 or ap2 or s1 != "-" or s2 != "-" or avg1 != "-" or avg2 != "-":
+        if (
+            p1
+            or p2
+            or ap1
+            or ap2
+            or s1 != "-"
+            or s2 != "-"
+            or avg1 != "-"
+            or avg2 != "-"
+        ):
             star1 = " (☆)" if p1 > p2 else ""
             star2 = " (★)" if p2 > p1 else ""
             star1_avg = " (☆)" if ap1 > ap2 else ""
@@ -558,8 +690,12 @@ def build_merged_best_maps(
 
     for code in set(wca_single) | set(wca_avg) | set(one_single) | set(one_avg):
         fmt = "number" if code in NUMBER_FORMAT_EVENTS else wca_fmt.get(code, "time")
-        best_single[code] = choose_better_value(wca_single.get(code), one_single.get(code), fmt=fmt, is_average=False)
-        best_avg[code] = choose_better_value(wca_avg.get(code), one_avg.get(code), fmt=fmt, is_average=True)
+        best_single[code] = choose_better_value(
+            wca_single.get(code), one_single.get(code), fmt=fmt, is_average=False
+        )
+        best_avg[code] = choose_better_value(
+            wca_avg.get(code), one_avg.get(code), fmt=fmt, is_average=True
+        )
         best_fmt[code] = fmt
 
     return best_single, best_avg, best_fmt
@@ -577,9 +713,13 @@ def compare_values(v1: int | None, v2: int | None, *, fmt: str, is_average: bool
         return text1, text2, 1, 0
     if normalized2 is not None and normalized1 is None:
         return text1, text2, 0, 1
-    if normalized1 < normalized2:
+    left = normalized1
+    right = normalized2
+    if left is None or right is None:
+        return text1, text2, 0, 0
+    if left < right:
         return text1, text2, 1, 0
-    if normalized2 < normalized1:
+    if right < left:
         return text1, text2, 0, 1
     return text1, text2, 0, 0
 

@@ -74,10 +74,12 @@ def extract_first_mentioned_qq(event: Any) -> str | None:
     getter = getattr(event, "get_messages", None)
     if callable(getter):
         try:
-            messages = getter() or []
+            messages = getter()
         except Exception:
             messages = []
-        for seg in list(messages)[1:]:
+        if not isinstance(messages, list):
+            messages = []
+        for seg in messages[1:]:
             if At is not None and isinstance(seg, At):
                 qq = getattr(seg, "qq", None)
                 if qq is not None:
@@ -104,6 +106,14 @@ def strip_command_prefix(message: str, command_name: str) -> str:
     text = (message or "").strip()
     pattern = rf"^/?{re.escape(command_name)}"
     return re.sub(pattern, "", text, count=1).strip()
+
+
+def strip_first_command_token(message: str) -> str:
+    text = (message or "").strip()
+    if not text:
+        return ""
+    parts = text.split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
 
 
 def strip_mentions(text: str) -> str:

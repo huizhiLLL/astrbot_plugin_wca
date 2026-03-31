@@ -8,10 +8,15 @@ from .wca_bindings import (
     WCABindingStore,
     extract_first_mentioned_qq,
     normalize_wca_id,
-    strip_command_prefix,
+    strip_first_command_token,
     strip_mentions,
 )
-from .wca_formatting import EVENT_FORMAT_MAP, EVENT_ID_MAP, EVENT_ORDER, format_person_records_text
+from .wca_formatting import (
+    EVENT_FORMAT_MAP,
+    EVENT_ID_MAP,
+    EVENT_ORDER,
+    format_person_records_text,
+)
 from .wca_person_lookup import WCAPersonLookupService
 
 
@@ -23,7 +28,9 @@ class WCAQuery:
     async def _fetch_json(self, url: str, params: dict | None = None) -> Any:
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.get(
+                    url, params=params, timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
                     if resp.status != 200:
                         logger.error(f"API 请求失败，状态码: {resp.status}, url: {url}")
                         return None
@@ -31,7 +38,9 @@ class WCAQuery:
                     try:
                         return json.loads(text)
                     except ValueError as e:
-                        logger.error(f"JSON 解析失败: {e}, 响应前 200 字符: {text[:200]}")
+                        logger.error(
+                            f"JSON 解析失败: {e}, 响应前 200 字符: {text[:200]}"
+                        )
                         return None
         except aiohttp.ClientError as e:
             logger.error(f"API 请求异常: {e}")
@@ -200,7 +209,8 @@ class WCAQuery:
             "single_records": single_records,
             "average_records": average_records,
         }
-    
+
+
 class WCACommandService:
     def __init__(self, query: WCAQuery, bindings: WCABindingStore):
         self.query = query
@@ -209,13 +219,15 @@ class WCACommandService:
 
     async def handle(self, event: AstrMessageEvent):
         message_str = event.message_str.strip()
-        search_input = strip_command_prefix(message_str, "wca")
+        search_input = strip_first_command_token(message_str)
         target_qq = extract_first_mentioned_qq(event)
 
         if target_qq:
             bound_wca_id = self.bindings.get(target_qq)
             if not bound_wca_id:
-                yield event.plain_result(f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢").use_t2i(False)
+                yield event.plain_result(
+                    f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢"
+                ).use_t2i(False)
                 return
             search_input = bound_wca_id
         elif not search_input:
@@ -263,7 +275,9 @@ class WCACommandService:
             person_id = person_info.get("wca_id", "")
 
             if not person_id:
-                yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
+                yield event.plain_result(
+                    "哎呀，选手信息不完整，无法查询成绩哦"
+                ).use_t2i(False)
                 return
 
             records_data = await self.query.get_person_best_records(
@@ -295,10 +309,12 @@ class WCABindCommandService:
     async def handle(self, event: AstrMessageEvent):
         qq_id = event.get_sender_id()
         if not qq_id:
-            yield event.plain_result("哎呀，拿不到你的 QQ 号呢，要在 QQ 里用才行哦~").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，拿不到你的 QQ 号呢，要在 QQ 里用才行哦~"
+            ).use_t2i(False)
             return
 
-        search_input = strip_command_prefix(event.message_str, "wca绑定")
+        search_input = strip_first_command_token(event.message_str)
         search_input = strip_mentions(search_input)
         if not search_input:
             yield event.plain_result(
@@ -317,16 +333,22 @@ class WCABindCommandService:
                     preferred_wca_id=normalized_wca_id,
                 )
                 if result.status == "not_found":
-                    yield event.plain_result(f"没有找到 WCAID 为 {normalized_wca_id} 的选手哦").use_t2i(False)
+                    yield event.plain_result(
+                        f"没有找到 WCAID 为 {normalized_wca_id} 的选手哦"
+                    ).use_t2i(False)
                     return
                 if result.status != "ok":
-                    yield event.plain_result(f"没有找到 WCAID 为 {normalized_wca_id} 的选手哦").use_t2i(False)
+                    yield event.plain_result(
+                        f"没有找到 WCAID 为 {normalized_wca_id} 的选手哦"
+                    ).use_t2i(False)
                     return
                 picked = result.picked or {}
             else:
                 result = await self.lookup.resolve_unique(search_input)
                 if result.status == "not_found":
-                    yield event.plain_result(f"没有找到名字是 {search_input} 的选手哦").use_t2i(False)
+                    yield event.plain_result(
+                        f"没有找到名字是 {search_input} 的选手哦"
+                    ).use_t2i(False)
                     return
                 if result.status == "ambiguous":
                     yield event.plain_result(
@@ -343,7 +365,9 @@ class WCABindCommandService:
             person_id = person_info.get("wca_id", "")
             person_name = person_info.get("name", "未知")
             if not person_id:
-                yield event.plain_result("哎呀，选手信息不完整，暂时没法绑定呢").use_t2i(False)
+                yield event.plain_result(
+                    "哎呀，选手信息不完整，暂时没法绑定呢"
+                ).use_t2i(False)
                 return
 
             self.bindings.set(str(qq_id), person_id)

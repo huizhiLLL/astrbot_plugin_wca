@@ -2,6 +2,7 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
@@ -76,17 +77,14 @@ class WCANemesisService:
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        message_str = event.message_str.strip()
-        parts = message_str.split(maxsplit=1)
-        if len(parts) < 2:
+        search_input = strip_first_command_token(event.message_str)
+        if not search_input:
             yield event.plain_result(
                 "请提供 WCAID 或姓名哦\n"
                 "用法: /宿敌 [WCAID/姓名]\n"
                 "示例: /宿敌 2026LIHU01\n"
             ).use_t2i(False)
             return
-
-        search_input = parts[1].strip()
 
         try:
             result = await self.lookup.resolve_unique(search_input)
@@ -110,10 +108,14 @@ class WCANemesisService:
             pinfo = self.lookup.get_person_info(picked)
             person_id = pinfo.get("wca_id", pinfo.get("id", ""))
             if not person_id:
-                yield event.plain_result("哎呀，选手信息不完整，无法查询成绩哦").use_t2i(False)
+                yield event.plain_result(
+                    "哎呀，选手信息不完整，无法查询成绩哦"
+                ).use_t2i(False)
                 return
 
-            yield event.plain_result("收到啦！正在为您寻找宿敌，请稍候哦...").use_t2i(False)
+            yield event.plain_result("收到啦！正在为您寻找宿敌，请稍候哦...").use_t2i(
+                False
+            )
 
             nemesis_data = await self.client.get_nemesis(person_id)
             if not nemesis_data:
@@ -167,7 +169,9 @@ class WCANemesisService:
         if 0 < country_count <= 10:
             details.append("地区：\n" + self._format_people(country_list))
 
-        return "\n".join([title, summary] + (["", "\n\n".join(details)] if details else []))
+        return "\n".join(
+            [title, summary] + (["", "\n\n".join(details)] if details else [])
+        )
 
     def _format_people(self, people: list[dict[str, str]]) -> str:
         lines: list[str] = []
@@ -190,6 +194,6 @@ class WCAVersionService:
             yield event.plain_result("查询版本失败了，请稍后重试哦").use_t2i(False)
             return
 
-        yield event.plain_result(
-            f"当前宿敌数据库版本日期是：{export_date}"
-        ).use_t2i(False)
+        yield event.plain_result(f"当前宿敌数据库版本日期是：{export_date}").use_t2i(
+            False
+        )
