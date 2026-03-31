@@ -16,10 +16,11 @@ from .services.wca_pic import WCAPicService
 from .services.wca_pk import WCAPKService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
+
 @register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.2")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
-    
+
     def __init__(self, context: Context):
         super().__init__(context)
         self.wca_query: WCAQuery | None = None
@@ -38,14 +39,18 @@ class WCAPlugin(Star):
         self.pr_service: WCAPRService | None = None
         self.prpk_service: WCAPRPKService | None = None
         self.nemesis_api_base = "https://wca.huizhi.pro"
-    
+
     async def initialize(self):
         """插件初始化"""
         try:
             # 纯 API 模式，无需本地数据库
             self.wca_query = WCAQuery()
-            self.wca_command_service = WCACommandService(self.wca_query, self.wca_bindings)
-            self.wca_bind_command = WCABindCommandService(self.wca_query, self.wca_bindings)
+            self.wca_command_service = WCACommandService(
+                self.wca_query, self.wca_bindings
+            )
+            self.wca_bind_command = WCABindCommandService(
+                self.wca_query, self.wca_bindings
+            )
             self.wca_pic = WCAPicService(self.wca_query, self.context)
             self.wca_pk = WCAPKService(self.wca_query)
             self.recent_competitions = RecentCompetitionsService()
@@ -55,23 +60,29 @@ class WCAPlugin(Star):
             self.one_handler = OneRecordHandler(self.one_client)
             self.cube_help_service = WCACubeHelpService(self.context)
             self.one_service = WCAOneService(self.one_client, self.one_handler)
-            self.pr_service = WCAPRService(self.wca_query, self.one_client, self.one_handler)
-            self.prpk_service = WCAPRPKService(self.wca_query, self.one_client, self.one_handler)
+            self.pr_service = WCAPRService(
+                self.wca_query, self.one_client, self.one_handler
+            )
+            self.prpk_service = WCAPRPKService(
+                self.wca_query, self.one_client, self.one_handler
+            )
             logger.info("WCA 插件初始化完成")
-                
+
         except Exception as e:
             logger.error(f"WCA 插件初始化失败: {e}")
 
-    @filter.command("cube帮助")
+    @filter.command("cube帮助", alias={"CUBE帮助"})
     async def cube_help_command(self, event: AstrMessageEvent):
         """显示魔方相关命令帮助"""
         if not self.cube_help_service:
-            yield event.plain_result("哎呀，初始化帮助页出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化帮助页出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.cube_help_service.handle(event):
             yield result
-    
-    @filter.command("wca")
+
+    @filter.command("wca", alias={"WCA"})
     async def wca_command(self, event: AstrMessageEvent):
         """查询 WCA 选手信息"""
         if not self.wca_command_service:
@@ -82,23 +93,27 @@ class WCAPlugin(Star):
         async for result in self.wca_command_service.handle(event):
             yield result
 
-    @filter.command("wca绑定")
+    @filter.command("wca绑定", alias={"WCA绑定"})
     async def wca_bind(self, event: AstrMessageEvent):
         """绑定 QQ 与 WCAID"""
         if not self.wca_bind_command:
-            yield event.plain_result("哎呀，初始化 WCA 绑定出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 WCA 绑定出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.wca_bind_command.handle(event):
             yield result
 
-    @filter.command("wcapic")
+    @filter.command("wcapic", alias={"WCAPIC"})
     async def wcapic_command(self, event: AstrMessageEvent):
         """个人记录图片：\n
         /wcapic [WCAID/姓名]\n
         /wcapic 2026LIHU01 /wcapic 李华
         """
         if not self.wca_pic:
-            yield event.plain_result("哎呀，初始化 WCA 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
 
         async for result in self.wca_pic.handle(event):
@@ -108,29 +123,35 @@ class WCAPlugin(Star):
     async def one_command(self, event: AstrMessageEvent):
         """查询 one 平台个人成绩"""
         if not self.one_service:
-            yield event.plain_result("哎呀，初始化 one 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 one 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.one_service.handle(event):
             yield result
 
-    @filter.command("pr")
+    @filter.command("pr", alias={"PR"})
     async def pr_command(self, event: AstrMessageEvent):
         """跨平台 PR 查询"""
         if not self.pr_service:
-            yield event.plain_result("哎呀，初始化 PR 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 PR 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.pr_service.handle(event):
             yield result
 
-    @filter.command("prpk")
+    @filter.command("prpk", alias={"PRPK"})
     async def prpk_command(self, event: AstrMessageEvent):
         """跨平台 PR PK 查询"""
         if not self.prpk_service:
-            yield event.plain_result("哎呀，初始化 PRPK 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 PRPK 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.prpk_service.handle(event):
             yield result
-    
+
     @filter.command("宿敌")
     async def wca_nemesis_command(self, event: AstrMessageEvent):
         """宿敌查询：\n
@@ -138,7 +159,9 @@ class WCAPlugin(Star):
         /宿敌 2026LIHU01 /宿敌 李华
         """
         if not self.wca_nemesis:
-            yield event.plain_result("哎呀，初始化 WCA 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.wca_nemesis.handle(event):
             yield result
@@ -150,23 +173,27 @@ class WCAPlugin(Star):
         返回宿敌后端当前使用的数据库导出日期
         """
         if not self.wca_version:
-            yield event.plain_result("哎呀，初始化版本查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化版本查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.wca_version.handle(event):
             yield result
 
-    @filter.command("wcapk")
+    @filter.command("wcapk", alias={"WCAPK"})
     async def wca_pk_command(self, event: AstrMessageEvent):
         """wcapk:\n
         /wcapk <选手1> <选手2>\n
         填写 WCAID 或姓名（姓名需唯一匹配）
         """
         if not self.wca_pk:
-            yield event.plain_result("哎呀，初始化 WCA 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.wca_pk.handle(event):
             yield result
-    
+
     @filter.command("近期比赛")
     async def recent_competitions_command(self, event: AstrMessageEvent):
         """近期比赛查询：\n
@@ -174,11 +201,13 @@ class WCAPlugin(Star):
         列出近期在中国举办的比赛（包含正在和即将要举办的）
         """
         if not self.recent_competitions:
-            yield event.plain_result("哎呀，初始化 WCA 查询出错啦，请稍后再试哦！").use_t2i(False)
+            yield event.plain_result(
+                "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
             return
         async for result in self.recent_competitions.handle(event):
             yield result
-    
+
     async def terminate(self):
         """插件销毁"""
         if self.one_client:
