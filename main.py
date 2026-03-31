@@ -16,7 +16,7 @@ from .services.wca_pic import WCAPicService
 from .services.wca_pk import WCAPKService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.1")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.2")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
     

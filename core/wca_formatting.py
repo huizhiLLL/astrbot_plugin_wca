@@ -192,6 +192,7 @@ def format_person_records_text(records_data: dict[str, Any]) -> str:
             best = single.get("best", 0)
             single_time = format_wca_time(best, event_format)
             single_rank = _rank_label(
+                country,
                 single.get("world_rank", 0),
                 single.get("continent_rank", 0),
                 single.get("country_rank", 0),
@@ -203,6 +204,7 @@ def format_person_records_text(records_data: dict[str, Any]) -> str:
             best = average.get("best", 0)
             avg_time = format_wca_time(best, event_format)
             avg_rank = _rank_label(
+                country,
                 average.get("world_rank", 0),
                 average.get("continent_rank", 0),
                 average.get("country_rank", 0),
@@ -226,9 +228,31 @@ def format_person_records_text(records_data: dict[str, Any]) -> str:
     return header + "\n".join(lines)
 
 
-def _rank_label(world_rank: object, continent_rank: object, country_rank: object) -> str:
-    if isinstance(country_rank, int) and country_rank <= 200 and country_rank > 0:
-        if country_rank == 1:
-            return "NR"
-        return f"NR{country_rank}"
+def _rank_label(
+    country_id: object,
+    world_rank: object,
+    continent_rank: object,
+    country_rank: object,
+) -> str:
+    country = str(country_id or "").strip().upper()
+
+    if country == "CN":
+        return _format_rank("NR", country_rank, 200)
+
+    for prefix, rank_value in (
+        ("WR", world_rank),
+        ("CR", continent_rank),
+        ("NR", country_rank),
+    ):
+        label = _format_rank(prefix, rank_value, 100)
+        if label != "-":
+            return label
+    return "-"
+
+
+def _format_rank(prefix: str, rank_value: object, limit: int) -> str:
+    if isinstance(rank_value, int) and 0 < rank_value <= limit:
+        if rank_value == 1:
+            return prefix
+        return f"{prefix}{rank_value}"
     return "-"
