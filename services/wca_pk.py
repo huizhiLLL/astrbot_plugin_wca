@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
+from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_formatting import EVENT_ID_MAP, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
@@ -19,9 +20,10 @@ class PlayerRecord:
 class WCAPKService:
     """选手 PK"""
 
-    def __init__(self, query: WCAQuery):
+    def __init__(self, query: WCAQuery, reaction_feedback: CommandReactionFeedback):
         self.query = query
         self.lookup = WCAPersonLookupService(query)
+        self.reaction_feedback = reaction_feedback
 
     async def _resolve_person(
         self, keyword: str
@@ -213,9 +215,7 @@ class WCAPKService:
             return
 
         p1, p2 = parts[0].strip(), parts[1].strip()
-        yield event.plain_result(
-            f"正在为您对比 {p1} 和 {p2} 的成绩，请稍候哦..."
-        ).use_t2i(False)
+        await self.reaction_feedback.send_processing_reaction(event)
         try:
             text, err = await self.compare(p1, p2)
             if err:

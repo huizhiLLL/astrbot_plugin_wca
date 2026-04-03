@@ -5,19 +5,25 @@ from typing import List, Dict, Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core.reaction_feedback import CommandReactionFeedback
+
 
 class RecentCompetitionsService:
     """近期比赛查询服务（通过 cubing.com API）"""
     
     API_BASE_URL = "https://cubing.com/api/v0/competition"
     
-    def __init__(self, db_path: str | None = None):
+    def __init__(
+        self,
+        db_path: str | None = None,
+        reaction_feedback: CommandReactionFeedback | None = None,
+    ):
         """
         Args:
             db_path: 保留参数以兼容旧代码，现在不再使用
         """
         # 不再需要数据库路径，但保留参数以兼容
-        pass
+        self.reaction_feedback = reaction_feedback or CommandReactionFeedback()
     
     async def _fetch_competitions_from_api(self, year: str = "current", type: str = "WCA") -> List[Dict[str, Any]]:
         """从 API 获取比赛列表
@@ -294,7 +300,7 @@ class RecentCompetitionsService:
 
     async def handle(self, event: AstrMessageEvent):
         try:
-            yield event.plain_result("正在为您查询近期比赛信息，请稍候哦...").use_t2i(False)
+            await self.reaction_feedback.send_processing_reaction(event)
             competitions = await self.get_recent_competitions_in_china(limit=50)
             result_text = self.format_competitions_list(competitions)
             if not competitions:

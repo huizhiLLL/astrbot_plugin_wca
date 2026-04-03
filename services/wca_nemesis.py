@@ -2,6 +2,7 @@ import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -71,10 +72,16 @@ class WCANemesisApiClient:
 
 
 class WCANemesisService:
-    def __init__(self, query: WCAQuery, api_base: str):
+    def __init__(
+        self,
+        query: WCAQuery,
+        api_base: str,
+        reaction_feedback: CommandReactionFeedback,
+    ):
         self.query = query
         self.client = WCANemesisApiClient(api_base)
         self.lookup = WCAPersonLookupService(query)
+        self.reaction_feedback = reaction_feedback
 
     async def handle(self, event: AstrMessageEvent):
         search_input = strip_first_command_token(event.message_str)
@@ -87,6 +94,7 @@ class WCANemesisService:
             return
 
         try:
+            await self.reaction_feedback.send_processing_reaction(event)
             result = await self.lookup.resolve_unique(search_input)
             if result.status == "not_found":
                 yield event.plain_result(
@@ -112,10 +120,6 @@ class WCANemesisService:
                     "哎呀，选手信息不完整，无法查询成绩哦"
                 ).use_t2i(False)
                 return
-
-            yield event.plain_result("收到啦！正在为您寻找宿敌，请稍候哦...").use_t2i(
-                False
-            )
 
             nemesis_data = await self.client.get_nemesis(person_id)
             if not nemesis_data:

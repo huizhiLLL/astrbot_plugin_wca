@@ -11,6 +11,7 @@ from ..clients.one_api import (
     PersonalRecordAPIClient,
     format_time_ms,
 )
+from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_formatting import EVENT_ID_MAP, EVENT_ORDER, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
@@ -150,11 +151,13 @@ class WCAPRService:
         query: WCAQuery,
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
+        reaction_feedback: CommandReactionFeedback,
     ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
+        self.reaction_feedback = reaction_feedback
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
@@ -170,6 +173,7 @@ class WCAPRService:
 
         search_input = parts[0].strip()
         one_id_input = parts[1].strip() if len(parts) >= 2 else None
+        await self.reaction_feedback.send_processing_reaction(event)
         player = await self._resolve_player(
             search_input,
             forced_wca_id=search_input if one_id_input else None,
@@ -308,11 +312,13 @@ class WCAPRPKService:
         query: WCAQuery,
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
+        reaction_feedback: CommandReactionFeedback,
     ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
+        self.reaction_feedback = reaction_feedback
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
@@ -325,7 +331,7 @@ class WCAPRPKService:
             ).use_t2i(False)
             return
 
-        yield event.plain_result("麦麦收到！正在进行 pk 中......").use_t2i(False)
+        await self.reaction_feedback.send_processing_reaction(event)
 
         if len(parts) >= 4:
             player1 = await self._resolve_player(

@@ -1,6 +1,6 @@
 name: astrbot_plugin_wca
 display_name: WCA 查询
 desc: 包含WCA查询、one查询、跨平台PR、宿敌、近期赛事和成绩对比。
-version: v1.1.2
+version: v1.1.4
 author: huizhiLLL
 repo: https://github.com/huizhiLLL/astrbot_plugin_wca

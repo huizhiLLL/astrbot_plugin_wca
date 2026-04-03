@@ -1,8 +1,9 @@
+from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
 
 from .clients.one_api import OneRecordHandler, PersonalRecordAPIClient
+from .core.reaction_feedback import CommandReactionFeedback
 from .core.wca_bindings import WCABindingStore
 from .core.wca_query import (
     WCAQuery,
@@ -17,12 +18,13 @@ from .services.wca_pk import WCAPKService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.2")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.4")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+        self.config = config
         self.wca_query: WCAQuery | None = None
         self.wca_bindings = WCABindingStore()
         self.wca_command_service: WCACommandService | None = None
@@ -39,6 +41,10 @@ class WCAPlugin(Star):
         self.pr_service: WCAPRService | None = None
         self.prpk_service: WCAPRPKService | None = None
         self.nemesis_api_base = "https://wca.huizhi.pro"
+        self.command_reaction_feedback = CommandReactionFeedback(
+            enabled=bool(config.get("enable_command_reaction", True)),
+            emoji_id=int(config.get("command_reaction_emoji_id", 124)),
+        )
 
     async def initialize(self):
         """插件初始化"""
@@ -52,19 +58,33 @@ class WCAPlugin(Star):
                 self.wca_query, self.wca_bindings
             )
             self.wca_pic = WCAPicService(self.wca_query, self.context)
-            self.wca_pk = WCAPKService(self.wca_query)
-            self.recent_competitions = RecentCompetitionsService()
-            self.wca_nemesis = WCANemesisService(self.wca_query, self.nemesis_api_base)
+            self.wca_pk = WCAPKService(
+                self.wca_query, self.command_reaction_feedback
+            )
+            self.recent_competitions = RecentCompetitionsService(
+                reaction_feedback=self.command_reaction_feedback
+            )
+            self.wca_nemesis = WCANemesisService(
+                self.wca_query,
+                self.nemesis_api_base,
+                self.command_reaction_feedback,
+            )
             self.wca_version = WCAVersionService(self.nemesis_api_base)
             self.one_client = PersonalRecordAPIClient()
             self.one_handler = OneRecordHandler(self.one_client)
             self.cube_help_service = WCACubeHelpService(self.context)
             self.one_service = WCAOneService(self.one_client, self.one_handler)
             self.pr_service = WCAPRService(
-                self.wca_query, self.one_client, self.one_handler
+                self.wca_query,
+                self.one_client,
+                self.one_handler,
+                self.command_reaction_feedback,
             )
             self.prpk_service = WCAPRPKService(
-                self.wca_query, self.one_client, self.one_handler
+                self.wca_query,
+                self.one_client,
+                self.one_handler,
+                self.command_reaction_feedback,
             )
             logger.info("WCA 插件初始化完成")
 
