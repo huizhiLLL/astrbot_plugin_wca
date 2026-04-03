@@ -60,17 +60,16 @@ def prepare_cube_help_data() -> dict[str, object]:
         "title": "Cube 命令帮助",
         "subtitle": "WCA 与 one 相关命令一览",
         "commands": [
-            {"name": "/cube帮助", "desc": "显示图片版命令帮助", "example": "/cube帮助"},
+            {"name": "/wca", "desc": "查询 WCA 个人成绩", "example": "/wca 李华 或 /wca @某人"},
             {"name": "/one", "desc": "查询 one 平台个人成绩", "example": "/one 李华 或 /one 1234"},
             {"name": "/wca绑定", "desc": "绑定你的 WCAID 到 QQ", "example": "/wca绑定 2026LIHU01"},
-            {"name": "/wca", "desc": "查询 WCA 个人成绩", "example": "/wca 李华 或 /wca @某人"},
             {"name": "/wcapic", "desc": "生成 WCA 个人纪录图片", "example": "/wcapic 李华"},
             {"name": "/wcapk", "desc": "WCA 成绩 PK", "example": "/wcapk 李华 张伟"},
-            {"name": "/宿敌", "desc": "查询 WCA 宿敌", "example": "/宿敌 李华"},
-            {"name": "/版本", "desc": "查询宿敌数据库版本日期", "example": "/版本"},
             {"name": "/pr", "desc": "双平台 PR 查询", "example": "/pr 李华 或 /pr 2026LIHU01 1234"},
             {"name": "/prpk", "desc": "双平台 PR PK 对比", "example": "/prpk 李华 张伟"},
-            {"name": "/近期比赛", "desc": "查询近期赛事", "example": "/近期比赛"},
+            {"name": "/近期比赛", "desc": "查询近期赛事", "example": "/近期比赛"},            
+            {"name": "/宿敌", "desc": "查询 WCA 宿敌", "example": "/宿敌 李华"},
+            {"name": "/版本", "desc": "查询宿敌数据库版本日期", "example": "/版本"},
         ],
     }
 
