@@ -1,6 +1,6 @@
-# astrbot_plugin_wca
+# WCA 查询 —— Astrbot 插件
 
-WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，无需本地数据库，实时查询 WCA 官方数据与 one 平台数据。
+WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，不拉取数据库，实时查询 WCA 官方数据与 one 平台数据。
 
 **当前版本：v1.1.2**
 
