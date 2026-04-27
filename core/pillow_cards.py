@@ -164,6 +164,7 @@ def render_wca_person_card(
         ("比赛", 160 * SCALE),
         ("复原次数", 210 * SCALE),
     ]
+    meta_cols = _expand_columns_to_width(meta_cols, content_w)
     meta_values = [
         f"{str(data.get('flag_text', '')).strip()} {str(data.get('country_name', '-')).strip()}".strip(),
         str(data.get("wca_id", "-")),
@@ -207,6 +208,7 @@ def render_wca_person_card(
         ("CR", 82 * SCALE),
         ("NR", 82 * SCALE),
     ]
+    record_cols = _expand_columns_to_width(record_cols, content_w, grow_indices=[0, 4, 5])
     _draw_records_table(
         draw,
         top=records_top,
@@ -241,7 +243,7 @@ def _prepare_photo(avatar_bytes: bytes | None, old_style: bool = False) -> Image
             draw.rounded_rectangle((cx - 90 * SCALE, 182 * SCALE, cx + 90 * SCALE, 330 * SCALE), radius=42 * SCALE, fill="#C8D4F3")
         return photo
 
-    photo.thumbnail((PHOTO_WIDTH, PHOTO_HEIGHT), _resample())
+    photo = _resize_to_cover(photo, PHOTO_WIDTH, PHOTO_HEIGHT)
     canvas = Image.new("RGBA", (PHOTO_WIDTH, PHOTO_HEIGHT), (245, 245, 245, 255) if old_style else (233, 238, 249, 255))
     px = (PHOTO_WIDTH - photo.width) // 2
     py = (PHOTO_HEIGHT - photo.height) // 2
@@ -251,6 +253,42 @@ def _prepare_photo(avatar_bytes: bytes | None, old_style: bool = False) -> Image
     mask_draw.rounded_rectangle((0, 0, PHOTO_WIDTH, PHOTO_HEIGHT), radius=(4 if old_style else 28) * SCALE, fill=255)
     canvas.putalpha(mask)
     return canvas
+
+
+def _resize_to_cover(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    width_ratio = target_width / image.width
+    height_ratio = target_height / image.height
+    scale = max(width_ratio, height_ratio)
+    resized = image.resize(
+        (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+        _resample(),
+    )
+    left = max(0, (resized.width - target_width) // 2)
+    top = max(0, (resized.height - target_height) // 2)
+    return resized.crop((left, top, left + target_width, top + target_height))
+
+
+def _expand_columns_to_width(
+    widths: list[tuple[str, int]],
+    target_width: int,
+    grow_indices: list[int] | None = None,
+) -> list[tuple[str, int]]:
+    current_width = sum(width for _, width in widths)
+    if current_width >= target_width or not widths:
+        return widths
+
+    expanded = list(widths)
+    indices = grow_indices or list(range(len(expanded)))
+    valid_indices = [index for index in indices if 0 <= index < len(expanded)]
+    if not valid_indices:
+        valid_indices = [len(expanded) - 1]
+
+    extra = target_width - current_width
+    base_extra, remainder = divmod(extra, len(valid_indices))
+    for offset, index in enumerate(valid_indices):
+        title, width = expanded[index]
+        expanded[index] = (title, width + base_extra + (1 if offset < remainder else 0))
+    return expanded
 
 
 def _draw_simple_table(
