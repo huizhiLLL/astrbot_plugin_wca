@@ -1,10 +1,4 @@
-from functools import lru_cache
-from pathlib import Path
-
 from ..core.wca_formatting import format_wca_time
-
-
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent.joinpath("templates", "person_card.html")
 
 EVENT_CN_MAP: dict[str, str] = {
     "222": "二阶",
@@ -26,11 +20,6 @@ EVENT_CN_MAP: dict[str, str] = {
     "333mbf": "多盲",
     "333ft": "脚拧",
 }
-
-
-@lru_cache(maxsize=1)
-def get_person_card_template() -> str:
-    return TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
 def build_person_card_template_data(records_data: dict) -> dict:

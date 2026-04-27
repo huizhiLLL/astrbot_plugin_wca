@@ -63,6 +63,11 @@ WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，不拉
 ### v1.1.6
 
 - 修复 `/pr` 与 `/prpk` 跨平台合并成绩中金字塔和斜转项目映射反转的问题
+- `/wcapic` 与 `/cube帮助` 改为 Pillow 本地绘制，移除对 HTML 截图渲染链的依赖
+- 图片发送统一改为 `Comp.Image.fromBytes(...)`，减少临时文件与 NT 富媒体上传失败概率
+- `wcapic` 新增头像下载后本地合成卡片，整体版式改为更稳的原生绘制流程
+- 内置中文字体切换为 `NotoSansSC-Regular`，汉字显示更端正、更稳定
+- 新增基础渲染测试文件 `tests/test_pillow_cards.py`
 
 ### v1.1.5
 

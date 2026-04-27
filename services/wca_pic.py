@@ -1,20 +1,13 @@
 import asyncio
-import io
-import os
-import time
 
+import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
-from astrbot.core.utils.t2i.renderer import HtmlRenderer
-from PIL import Image
 
-from .wca_pic_template import (
-    build_person_card_template_data,
-    format_person_records_for_pic,
-    get_person_card_template,
-)
+from .wca_pic_template import format_person_records_for_pic
+from ..core.pillow_cards import render_wca_person_card
 from ..core.wca_bindings import strip_first_command_token
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -22,7 +15,7 @@ from ..core.wca_query import WCAQuery
 
 class WCAPicService:
     IMAGE_RENDER_TIMEOUT_SECONDS = 60
-    IMAGE_SEND_MAX_BYTES = 1024 * 1024
+    AVATAR_TIMEOUT_SECONDS = 12
 
     def __init__(self, query: WCAQuery, context: Context):
         self.query = query
@@ -41,7 +34,7 @@ class WCAPicService:
             ).use_t2i(False)
             return
         yield event.plain_result(
-            "正在为您生成 WCA 成绩图，请稍候哦...（查看原图更加清晰~）"
+            "正在为您生成 WCA 成绩图，请稍候哦...（新版改成稳定本地绘制啦）"
         ).use_t2i(False)
 
         try:
@@ -85,25 +78,18 @@ class WCAPicService:
                 return
 
             try:
-                image_path = await asyncio.wait_for(
-                    self._render_person_records_card(records_data, event),
+                image_bytes = await asyncio.wait_for(
+                    self._render_person_records_card(records_data),
                     timeout=self.IMAGE_RENDER_TIMEOUT_SECONDS,
                 )
                 try:
-                    await self._send_image(event, image_path)
+                    await self._send_image(event, image_bytes)
                 except Exception as send_err:
-                    logger.error(f"WCA PIC 发送超时或失败: {send_err}")
+                    logger.error(f"WCA PIC 发送失败: {send_err}")
                     pic_text = format_person_records_for_pic(records_data)
                     yield event.plain_result(
-                        "哎呀，图片发送超时啦，先为您展示文字版吧：\n\n" + pic_text
+                        "哎呀，图片发送失败啦，先为您展示文字版吧：\n\n" + pic_text
                     ).use_t2i(False)
-                finally:
-                    if image_path and os.path.exists(image_path):
-                        try:
-                            os.remove(image_path)
-                            logger.debug(f"已清理 WCA 临时图片: {image_path}")
-                        except Exception as e:
-                            logger.error(f"清理临时图片失败: {e}")
             except asyncio.TimeoutError:
                 logger.error("WCA PIC 渲染超时")
                 pic_text = format_person_records_for_pic(records_data)
@@ -123,193 +109,37 @@ class WCAPicService:
                 False
             )
 
-    async def _render_person_records_card(
-        self, records_data: dict, event: AstrMessageEvent
-    ) -> str:
-        cfg = self.context.get_config(umo=event.unified_msg_origin)
-        endpoint = cfg.get("t2i_endpoint") if isinstance(cfg, dict) else None
-
-        renderer = HtmlRenderer(endpoint_url=endpoint)
-        await renderer.initialize()
-
-        tmpl_str = get_person_card_template()
-        tmpl_data = build_person_card_template_data(records_data)
-        return await renderer.render_custom_template(
-            tmpl_str,
-            tmpl_data,
-            return_url=False,
-            options={
-                "full_page": True,
-                "type": "jpeg",
-                "quality": 100,
-                "scale": "device",
-                "device_scale_factor_level": "ultra",
-            },
-        )
-
-    async def _send_image(self, event: AstrMessageEvent, image_path: str):
-        file_size = os.path.getsize(image_path)
+    async def _render_person_records_card(self, records_data: dict) -> bytes:
+        avatar_bytes = await self._fetch_avatar_bytes(records_data)
+        image_bytes = render_wca_person_card(records_data, avatar_bytes=avatar_bytes)
         logger.warning(
-            f"WCA PIC 准备发送图片: path={image_path}, size={file_size} bytes"
+            f"WCA PIC 本地绘制完成: size={len(image_bytes)} bytes"
         )
+        return image_bytes
 
-        with open(image_path, "rb") as f:
-            image_bytes = f.read()
-
-        compressed_bytes = self._compress_image_for_send(image_bytes)
-        if compressed_bytes is not None and len(compressed_bytes) < len(image_bytes):
-            logger.warning(
-                "WCA PIC 图片已压缩后发送: "
-                f"original={len(image_bytes)} bytes, compressed={len(compressed_bytes)} bytes"
-            )
-            image_bytes = compressed_bytes
-
-        try:
-            await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
-            logger.debug("WCA PIC 使用内存字节发送成功")
-        except Exception as bytes_err:
-            if await self._handle_potential_send_success(event, bytes_err):
-                return
-            logger.warning(f"WCA PIC 字节发送失败，回退路径发送: {bytes_err}")
-            image_result = event.image_result(image_path)
-            try:
-                await event.send(image_result)
-            except Exception as path_err:
-                if await self._handle_potential_send_success(event, path_err):
-                    return
-                raise
-
-    async def _handle_potential_send_success(
-        self,
-        event: AstrMessageEvent,
-        send_err: Exception,
-    ) -> bool:
-        if not self._is_potential_success_error(send_err):
-            return False
-
-        group_id = event.get_group_id()
-        if not group_id:
-            return False
-
-        logger.warning(f"WCA PIC 命中疑似假失败，进入观察期: {send_err}")
-        await asyncio.sleep(10)
-
-        if await self._was_image_sent_recently(event, seconds=30):
-            logger.info("WCA PIC 已通过历史消息确认图片实际送达，拦截后续降级")
-            return True
-
-        logger.warning("WCA PIC 观察期结束，未确认图片送达")
-        return False
-
-    def _is_potential_success_error(self, err: Exception) -> bool:
-        error_str = str(err).lower()
-        return (
-            "timeout" in error_str or "retcode=1200" in error_str or "1200" in error_str
-        )
-
-    async def _was_image_sent_recently(
-        self, event: AstrMessageEvent, seconds: int = 30
-    ) -> bool:
-        group_id = event.get_group_id()
-        if not group_id:
-            return False
-
-        history = await self._get_group_msg_history(event, group_id, count=50)
-        if not history:
-            return False
-
-        messages = (
-            history.get("messages", history) if isinstance(history, dict) else history
-        )
-        if not isinstance(messages, list):
-            return False
-
-        self_id = str(event.get_self_id() or "")
-        now = time.time()
-
-        for msg in reversed(messages):
-            if not isinstance(msg, dict):
-                continue
-
-            msg_time = msg.get("time", 0)
-            try:
-                if now - float(msg_time) > seconds:
-                    break
-            except Exception:
-                continue
-
-            user_id = str(msg.get("user_id", msg.get("sender", {}).get("user_id", "")))
-            if self_id and user_id != self_id:
-                continue
-
-            message_chain = msg.get("message", [])
-            if isinstance(message_chain, str):
-                continue
-
-            for seg in message_chain:
-                if isinstance(seg, dict) and seg.get("type") == "image":
-                    return True
-
-        return False
-
-    async def _get_group_msg_history(
-        self,
-        event: AstrMessageEvent,
-        group_id: str,
-        count: int = 50,
-    ):
-        bot = getattr(event, "bot", None)
-        if bot is None:
+    async def _fetch_avatar_bytes(self, records_data: dict) -> bytes | None:
+        person = records_data.get("person") or {}
+        avatar_url = person.get("avatar_thumb_url") or person.get("avatar_url") or ""
+        if not avatar_url:
             return None
 
         try:
-            if hasattr(bot, "get_group_msg_history"):
-                return await bot.get_group_msg_history(
-                    group_id=int(group_id), count=count
-                )
-        except Exception as e:
-            logger.warning(f"WCA PIC 读取群历史失败(get_group_msg_history): {e}")
-
-        try:
-            api = getattr(bot, "api", None)
-            if api is not None and hasattr(api, "call_action"):
-                return await api.call_action(
-                    "get_group_msg_history",
-                    group_id=int(group_id),
-                    count=count,
-                )
-        except Exception as e:
-            logger.warning(f"WCA PIC 读取群历史失败(api.call_action): {e}")
-
-        try:
-            if hasattr(bot, "call_action"):
-                return await bot.call_action(
-                    "get_group_msg_history",
-                    group_id=int(group_id),
-                    count=count,
-                )
-        except Exception as e:
-            logger.warning(f"WCA PIC 读取群历史失败(call_action): {e}")
-
-        return None
-
-    def _compress_image_for_send(self, image_bytes: bytes) -> bytes | None:
-        if len(image_bytes) <= self.IMAGE_SEND_MAX_BYTES:
+            timeout = aiohttp.ClientTimeout(total=self.AVATAR_TIMEOUT_SECONDS)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(str(avatar_url)) as response:
+                    if response.status != 200:
+                        logger.warning(
+                            f"WCA PIC 头像下载失败，状态码: {response.status}, url={avatar_url}"
+                        )
+                        return None
+                    return await response.read()
+        except Exception as avatar_err:
+            logger.warning(f"WCA PIC 头像下载失败: {avatar_err}")
             return None
 
-        try:
-            with Image.open(io.BytesIO(image_bytes)) as img:
-                if img.mode not in ("RGB", "L"):
-                    img = img.convert("RGB")
-
-                if max(img.size) > 1600:
-                    img.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-
-                output = io.BytesIO()
-                img.save(
-                    output, format="JPEG", quality=80, optimize=True, progressive=True
-                )
-                return output.getvalue()
-        except Exception as compress_err:
-            logger.warning(f"WCA PIC 图片压缩失败，继续使用原图发送: {compress_err}")
-            return None
+    async def _send_image(self, event: AstrMessageEvent, image_bytes: bytes):
+        logger.warning(
+            f"WCA PIC 准备发送 Pillow 图片: size={len(image_bytes)} bytes"
+        )
+        await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
+        logger.debug("WCA PIC 使用 Pillow 字节发送成功")
