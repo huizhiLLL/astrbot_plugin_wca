@@ -21,26 +21,44 @@ from ..core.wca_query import WCAQuery
 NUMBER_FORMAT_EVENTS: set[str] = {"333fm"}
 ONE_EVENT_TO_WCA: dict[str, str] = {
     "333": "333",
+    "三阶": "333",
     "222": "222",
+    "二阶": "222",
     "444": "444",
+    "四阶": "444",
     "555": "555",
+    "五阶": "555",
     "666": "666",
+    "六阶": "666",
     "777": "777",
+    "七阶": "777",
     "333oh": "333oh",
+    "三单": "333oh",
     "333bf": "333bf",
+    "三盲": "333bf",
     "444bf": "444bf",
+    "四盲": "444bf",
     "555bf": "555bf",
+    "五盲": "555bf",
+    "无盲": "555bf",
     "333mbf": "333mbf",
     "333mbld": "333mbf",
+    "多盲": "333mbf",
     "333fm": "333fm",
+    "最少步": "333fm",
     "py": "py",
     "pyram": "py",
+    "金字塔": "py",
     "sk": "sk",
     "skewb": "sk",
+    "斜转": "sk",
     "sq1": "sq1",
+    "SQ1": "sq1",
     "clock": "clock",
+    "魔表": "clock",
     "minx": "minx",
     "meg": "minx",
+    "五魔": "minx",
 }
 
 WCA_EVENT_CODES: set[str] = set()
@@ -459,7 +477,9 @@ def normalize_wca_event_id(event_id: str | None) -> str | None:
 def normalize_one_event_code(event_code: str | None) -> str | None:
     if not event_code:
         return None
-    mapped = ONE_EVENT_TO_WCA.get(event_code.lower())
+    mapped = ONE_EVENT_TO_WCA.get(str(event_code).strip())
+    if not mapped:
+        mapped = ONE_EVENT_TO_WCA.get(str(event_code).strip().lower())
     if not mapped:
         return None
     mapped_lower = mapped.lower()
