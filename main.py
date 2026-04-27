@@ -15,6 +15,7 @@ from .services.wca_help import WCACubeHelpService
 from .services.wca_nemesis import WCANemesisService, WCAVersionService
 from .services.wca_pic import WCAPicService
 from .services.wca_pk import WCAPKService
+from .services.one_pk import OnePKService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
@@ -31,6 +32,7 @@ class WCAPlugin(Star):
         self.wca_bind_command: WCABindCommandService | None = None
         self.wca_pic: WCAPicService | None = None
         self.wca_pk: WCAPKService | None = None
+        self.one_pk: OnePKService | None = None
         self.recent_competitions: RecentCompetitionsService | None = None
         self.wca_nemesis: WCANemesisService | None = None
         self.wca_version: WCAVersionService | None = None
@@ -72,6 +74,11 @@ class WCAPlugin(Star):
             self.wca_version = WCAVersionService(self.nemesis_api_base)
             self.one_client = PersonalRecordAPIClient()
             self.one_handler = OneRecordHandler(self.one_client)
+            self.one_pk = OnePKService(
+                self.one_client,
+                self.one_handler,
+                self.command_reaction_feedback,
+            )
             self.cube_help_service = WCACubeHelpService(self.context)
             self.one_service = WCAOneService(self.one_client, self.one_handler)
             self.pr_service = WCAPRService(
@@ -212,6 +219,20 @@ class WCAPlugin(Star):
             ).use_t2i(False)
             return
         async for result in self.wca_pk.handle(event):
+            yield result
+
+    @filter.command("onepk", alias={"ONEPK"})
+    async def one_pk_command(self, event: AstrMessageEvent):
+        """onepk:\n
+        /onepk <选手1> <选手2>\n
+        填写 one 用户名或 ID（姓名需完全匹配）
+        """
+        if not self.one_pk:
+            yield event.plain_result(
+                "哎呀，初始化 one 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
+            return
+        async for result in self.one_pk.handle(event):
             yield result
 
     @filter.command("近期比赛")

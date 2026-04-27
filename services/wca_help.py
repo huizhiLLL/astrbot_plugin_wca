@@ -65,6 +65,7 @@ def prepare_cube_help_data() -> dict[str, object]:
             {"name": "/wca绑定", "desc": "绑定你的 WCAID 到 QQ", "example": "/wca绑定 2026LIHU01"},
             {"name": "/wcapic", "desc": "生成 WCA 个人纪录图片", "example": "/wcapic 李华"},
             {"name": "/wcapk", "desc": "WCA 成绩 PK", "example": "/wcapk 李华 张伟"},
+            {"name": "/onepk", "desc": "one 成绩 PK", "example": "/onepk 李华 张伟"},
             {"name": "/pr", "desc": "双平台 PR 查询", "example": "/pr 李华 或 /pr 2026LIHU01 1234"},
             {"name": "/prpk", "desc": "双平台 PR PK 对比", "example": "/prpk 李华 张伟"},
             {"name": "/近期比赛", "desc": "查询近期赛事", "example": "/近期比赛"},            
