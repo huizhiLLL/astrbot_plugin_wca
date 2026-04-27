@@ -115,7 +115,7 @@ class PKTwoService:
         if not all_events:
             return ""
 
-        lines = [f"{wca_name} WCA VS ONE\n"]
+        lines = [f"{wca_name}\n WCA VS ONE\n"]
         score_wca = 0
         score_one = 0
 
