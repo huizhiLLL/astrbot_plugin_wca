@@ -16,6 +16,7 @@ from .services.wca_nemesis import WCANemesisService, WCAVersionService
 from .services.wca_pic import WCAPicService
 from .services.wca_pk import WCAPKService
 from .services.one_pk import OnePKService
+from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
@@ -33,6 +34,7 @@ class WCAPlugin(Star):
         self.wca_pic: WCAPicService | None = None
         self.wca_pk: WCAPKService | None = None
         self.one_pk: OnePKService | None = None
+        self.pktwo_service: PKTwoService | None = None
         self.recent_competitions: RecentCompetitionsService | None = None
         self.wca_nemesis: WCANemesisService | None = None
         self.wca_version: WCAVersionService | None = None
@@ -75,6 +77,12 @@ class WCAPlugin(Star):
             self.one_client = PersonalRecordAPIClient()
             self.one_handler = OneRecordHandler(self.one_client)
             self.one_pk = OnePKService(
+                self.one_client,
+                self.one_handler,
+                self.command_reaction_feedback,
+            )
+            self.pktwo_service = PKTwoService(
+                self.wca_query,
                 self.one_client,
                 self.one_handler,
                 self.command_reaction_feedback,
@@ -233,6 +241,21 @@ class WCAPlugin(Star):
             ).use_t2i(False)
             return
         async for result in self.one_pk.handle(event):
+            yield result
+
+    @filter.command("pktwo", alias={"PKTWO"})
+    async def pktwo_command(self, event: AstrMessageEvent):
+        """pktwo:\n
+        /pktwo <姓名>\n
+        /pktwo <WCAID> <oneID>\n
+        比较同一选手在 WCA 与 one 两个平台的成绩
+        """
+        if not self.pktwo_service:
+            yield event.plain_result(
+                "哎呀，初始化双平台对比出错啦，请稍后再试哦！"
+            ).use_t2i(False)
+            return
+        async for result in self.pktwo_service.handle(event):
             yield result
 
     @filter.command("近期比赛")
