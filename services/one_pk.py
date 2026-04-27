@@ -154,7 +154,7 @@ class OnePKService:
                 avg_star2 = " (★)" if avg_score2 > avg_score1 else ""
                 event_name_str = str(event_name)
                 lines.append(f"{event_name_str}  {single_text1}{single_star1} || {single_text2}{single_star2}")
-                indent_spaces = " " * (len(event_name_str) + 3)
+                indent_spaces = " " * (len(event_name_str) + 5)
                 lines.append(f"{indent_spaces}  {avg_text1}{avg_star1} || {avg_text2}{avg_star2}")
 
         result_text = "\n".join(lines) if lines else ""
