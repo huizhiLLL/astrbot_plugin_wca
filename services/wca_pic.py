@@ -32,7 +32,7 @@ class WCAPicService:
             ).use_t2i(False)
             return
         yield event.plain_result(
-            "正在为您生成 WCA 成绩图，请稍候哦...（新版改成稳定本地绘制啦）"
+            "正在生成 WCA 成绩图...（查看原图更加清晰）"
         ).use_t2i(False)
 
         try:
