@@ -26,7 +26,15 @@ class OnePKService:
         user_id, user_name, error = await self.one_handler.resolve_user(keyword)
         if error:
             return None, None, error
-        resolved_name = user_name or keyword
+        if user_id is None:
+            return None, None, "无法确认 one 选手身份哦~"
+
+        resolved_name = user_name
+        if not resolved_name:
+            records_resp = await self.one_client.get_personal_records(user_id)
+            resolved_name = self._extract_user_name(records_resp)
+
+        resolved_name = resolved_name or keyword
         return user_id, resolved_name, None
 
     def _build_best_maps(self, response: dict):
@@ -57,6 +65,15 @@ class OnePKService:
                     avg_map[event_id] = avg_value
 
         return single_map, avg_map, name_map
+
+    @staticmethod
+    def _extract_user_name(response: dict | None) -> str | None:
+        rank_data = response.get("data", {}).get("rank", []) if response else []
+        for record in rank_data or []:
+            user_name = str(record.get("u_name") or "").strip()
+            if user_name:
+                return user_name
+        return None
 
     def _format_one_value(self, value: int | None, event_id: int, *, is_average: bool) -> str:
         if value is None or value <= 0 or value == 999999:

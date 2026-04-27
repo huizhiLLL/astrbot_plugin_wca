@@ -46,12 +46,12 @@ ONE_EVENT_TO_WCA: dict[str, str] = {
     "多盲": "333mbf",
     "333fm": "333fm",
     "最少步": "333fm",
-    "py": "py",
-    "pyram": "py",
-    "金字塔": "py",
-    "sk": "sk",
-    "skewb": "sk",
-    "斜转": "sk",
+    "py": "sk",
+    "pyram": "sk",
+    "金字塔": "sk",
+    "sk": "py",
+    "skewb": "py",
+    "斜转": "py",
     "sq1": "sq1",
     "SQ1": "sq1",
     "clock": "clock",
@@ -64,14 +64,14 @@ ONE_EVENT_TO_WCA: dict[str, str] = {
 WCA_EVENT_CODES: set[str] = set()
 for event_id in EVENT_ID_MAP.keys():
     normalized = (
-        "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+        "sk" if event_id == "pyram" else "py" if event_id == "skewb" else event_id
     )
     WCA_EVENT_CODES.add(normalized)
 
 CROSS_PLATFORM_EVENT_ORDER: list[str] = []
 for event_id in EVENT_ORDER.keys():
     normalized = (
-        "py" if event_id == "pyram" else "sk" if event_id == "skewb" else event_id
+        "sk" if event_id == "pyram" else "py" if event_id == "skewb" else event_id
     )
     if normalized not in CROSS_PLATFORM_EVENT_ORDER:
         CROSS_PLATFORM_EVENT_ORDER.append(normalized)
@@ -468,9 +468,9 @@ def normalize_wca_event_id(event_id: str | None) -> str | None:
         return None
     event_id = event_id.lower()
     if event_id == "pyram":
-        return "py"
-    if event_id == "skewb":
         return "sk"
+    if event_id == "skewb":
+        return "py"
     return event_id
 
 

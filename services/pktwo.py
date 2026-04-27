@@ -93,7 +93,15 @@ class PKTwoService:
             yield event.plain_result(f"获取 one 成绩失败\n错误：{one_error}").use_t2i(False)
             return
 
-        text = self._build_compare_text(wca_name, wca_id, player.one_user_id, wca_records, one_records_resp)
+        one_user_name = player.one_user_name or self._extract_one_user_name(one_records_resp)
+        text = self._build_compare_text(
+            wca_name,
+            one_user_name,
+            wca_id,
+            player.one_user_id,
+            wca_records,
+            one_records_resp,
+        )
         if not text:
             yield event.plain_result("两个平台均无有效成绩").use_t2i(False)
             return
@@ -103,6 +111,7 @@ class PKTwoService:
     def _build_compare_text(
         self,
         wca_name: str,
+        one_user_name: str | None,
         wca_id: str,
         one_user_id: int,
         wca_records: dict,
@@ -115,7 +124,10 @@ class PKTwoService:
         if not all_events:
             return ""
 
-        lines = [f"{wca_name}\n{wca_id} VS {one_user_id}\n"]
+        display_name = (
+            f"{wca_name} ({one_user_name})" if one_user_name and one_user_name != wca_name else wca_name
+        )
+        lines = [f"{display_name}\n{wca_id} VS {one_user_id}\n"]
         score_wca = 0
         score_one = 0
 
@@ -152,3 +164,12 @@ class PKTwoService:
         else:
             result_text += f"\n\n {score_wca} : {score_one} \n两个平台打平了呢~"
         return result_text
+
+    @staticmethod
+    def _extract_one_user_name(one_records_resp: dict) -> str | None:
+        rank_data = one_records_resp.get("data", {}).get("rank", []) or []
+        for record in rank_data:
+            user_name = str(record.get("u_name") or "").strip()
+            if user_name:
+                return user_name
+        return None
