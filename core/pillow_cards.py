@@ -34,8 +34,6 @@ PADDING_Y = 42 * SCALE
 HELP_CARD_GAP = 22 * SCALE
 HELP_ROW_HEIGHT = 118 * SCALE
 PERSON_ROW_HEIGHT = 56 * SCALE
-PHOTO_WIDTH = 460 * SCALE
-PHOTO_HEIGHT = 306 * SCALE
 
 
 class FontBook:
@@ -109,14 +107,12 @@ def render_cube_help_card(data: dict[str, object]) -> bytes:
 
 def render_wca_person_card(
     records_data: dict,
-    avatar_bytes: bytes | None = None,
 ) -> bytes:
     fonts = FontBook()
     data = build_person_card_template_data(records_data)
     rows = list(data.get("rows", []))
 
     wrap_pad = 40 * SCALE
-    inner_pad = 40 * SCALE
     meta_header_h = 52 * SCALE
     meta_row_h = 62 * SCALE
     records_header_h = 52 * SCALE
@@ -127,9 +123,7 @@ def render_wca_person_card(
     canvas_height = (
         wrap_pad * 2
         + 48 * SCALE
-        + 30 * SCALE
-        + PHOTO_HEIGHT
-        + 30 * SCALE
+        + 42 * SCALE
         + meta_header_h
         + meta_row_h
         + section_gap
@@ -151,20 +145,17 @@ def render_wca_person_card(
     name_w = name_bbox[2] - name_bbox[0]
     draw.text(((CANVAS_WIDTH - name_w) / 2, wrap_top), name, font=fonts.title, fill="#222222")
 
-    avatar_top = wrap_top + 48 * SCALE
-    avatar = _prepare_photo(avatar_bytes, old_style=True)
-    avatar_x = (CANVAS_WIDTH - PHOTO_WIDTH) // 2
-    image.paste(avatar, (avatar_x, avatar_top), avatar)
-
-    meta_top = avatar_top + PHOTO_HEIGHT + 30 * SCALE
-    meta_cols = [
-        ("国家/地区", 260 * SCALE),
-        ("WCA ID", 270 * SCALE),
-        ("性别", 140 * SCALE),
-        ("比赛", 160 * SCALE),
-        ("复原次数", 210 * SCALE),
-    ]
-    meta_cols = _expand_columns_to_width(meta_cols, content_w)
+    meta_top = wrap_top + 90 * SCALE
+    meta_cols = _columns_from_ratios(
+        [
+            ("国家/地区", 1),
+            ("WCA ID", 1),
+            ("性别", 1),
+            ("比赛", 1),
+            ("复原次数", 1),
+        ],
+        content_w,
+    )
     meta_values = [
         f"{str(data.get('flag_text', '')).strip()} {str(data.get('country_name', '-')).strip()}".strip(),
         str(data.get("wca_id", "-")),
@@ -197,18 +188,20 @@ def render_wca_person_card(
     draw.text(((CANVAS_WIDTH - sec_w) / 2, section_top), section_title, font=fonts.h3, fill="#222222")
 
     records_top = section_top + 44 * SCALE
-    record_cols = [
-        ("项目", 260 * SCALE),
-        ("NR", 82 * SCALE),
-        ("CR", 82 * SCALE),
-        ("WR", 82 * SCALE),
-        ("单次", 170 * SCALE),
-        ("平均", 170 * SCALE),
-        ("WR", 82 * SCALE),
-        ("CR", 82 * SCALE),
-        ("NR", 82 * SCALE),
-    ]
-    record_cols = _expand_columns_to_width(record_cols, content_w, grow_indices=[0, 4, 5])
+    record_cols = _columns_from_ratios(
+        [
+            ("项目", 1.8),
+            ("NR", 1),
+            ("CR", 1),
+            ("WR", 1),
+            ("单次", 1),
+            ("平均", 1),
+            ("WR", 1),
+            ("CR", 1),
+            ("NR", 1),
+        ],
+        content_w,
+    )
     _draw_records_table(
         draw,
         top=records_top,
@@ -223,72 +216,25 @@ def render_wca_person_card(
     return _image_to_png_bytes(image)
 
 
-def _prepare_photo(avatar_bytes: bytes | None, old_style: bool = False) -> Image.Image:
-    photo = None
-    if avatar_bytes:
-        try:
-            photo = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
-        except Exception:
-            photo = None
-
-    if photo is None:
-        photo = Image.new("RGBA", (PHOTO_WIDTH, PHOTO_HEIGHT), "#F5F5F5" if old_style else "#E9EEF9")
-        draw = ImageDraw.Draw(photo)
-        radius = 4 * SCALE if old_style else 28 * SCALE
-        fill = "#F5F5F5" if old_style else "#E9EEF9"
-        draw.rounded_rectangle((0, 0, PHOTO_WIDTH - 1, PHOTO_HEIGHT - 1), radius=radius, fill=fill)
-        if not old_style:
-            cx = PHOTO_WIDTH // 2
-            draw.ellipse((cx - 54 * SCALE, 64 * SCALE, cx + 54 * SCALE, 172 * SCALE), fill="#C8D4F3")
-            draw.rounded_rectangle((cx - 90 * SCALE, 182 * SCALE, cx + 90 * SCALE, 330 * SCALE), radius=42 * SCALE, fill="#C8D4F3")
-        return photo
-
-    photo = _resize_to_cover(photo, PHOTO_WIDTH, PHOTO_HEIGHT)
-    canvas = Image.new("RGBA", (PHOTO_WIDTH, PHOTO_HEIGHT), (245, 245, 245, 255) if old_style else (233, 238, 249, 255))
-    px = (PHOTO_WIDTH - photo.width) // 2
-    py = (PHOTO_HEIGHT - photo.height) // 2
-    canvas.paste(photo, (px, py), photo)
-    mask = Image.new("L", (PHOTO_WIDTH, PHOTO_HEIGHT), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle((0, 0, PHOTO_WIDTH, PHOTO_HEIGHT), radius=(4 if old_style else 28) * SCALE, fill=255)
-    canvas.putalpha(mask)
-    return canvas
-
-
-def _resize_to_cover(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
-    width_ratio = target_width / image.width
-    height_ratio = target_height / image.height
-    scale = max(width_ratio, height_ratio)
-    resized = image.resize(
-        (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
-        _resample(),
-    )
-    left = max(0, (resized.width - target_width) // 2)
-    top = max(0, (resized.height - target_height) // 2)
-    return resized.crop((left, top, left + target_width, top + target_height))
-
-
-def _expand_columns_to_width(
-    widths: list[tuple[str, int]],
+def _columns_from_ratios(
+    ratios: list[tuple[str, float]],
     target_width: int,
-    grow_indices: list[int] | None = None,
 ) -> list[tuple[str, int]]:
-    current_width = sum(width for _, width in widths)
-    if current_width >= target_width or not widths:
-        return widths
+    if not ratios:
+        return []
 
-    expanded = list(widths)
-    indices = grow_indices or list(range(len(expanded)))
-    valid_indices = [index for index in indices if 0 <= index < len(expanded)]
-    if not valid_indices:
-        valid_indices = [len(expanded) - 1]
+    total_ratio = sum(max(0, ratio) for _, ratio in ratios)
+    if total_ratio <= 0:
+        width, remainder = divmod(target_width, len(ratios))
+        return [(title, width + (1 if index < remainder else 0)) for index, (title, _) in enumerate(ratios)]
 
-    extra = target_width - current_width
-    base_extra, remainder = divmod(extra, len(valid_indices))
-    for offset, index in enumerate(valid_indices):
-        title, width = expanded[index]
-        expanded[index] = (title, width + base_extra + (1 if offset < remainder else 0))
-    return expanded
+    raw_widths = [(title, target_width * max(0, ratio) / total_ratio) for title, ratio in ratios]
+    widths = [(title, int(width)) for title, width in raw_widths]
+    remainder = target_width - sum(width for _, width in widths)
+    for index in range(remainder):
+        title, width = widths[index % len(widths)]
+        widths[index % len(widths)] = (title, width + 1)
+    return widths
 
 
 def _draw_simple_table(
@@ -335,7 +281,7 @@ def _draw_records_table(
             (x, top, x + width, top + header_height),
             fonts.body_small,
             "#333333",
-            "left" if index == 0 else "right",
+            "left" if index == 0 else "center",
             pad_x=20 * SCALE if index == 0 else 10 * SCALE,
         )
         x += width
@@ -358,14 +304,14 @@ def _draw_records_table(
         draw.rectangle((left, current_top, left + sum(width for _, width in widths), current_top + row_height), fill=bg)
         values = [
             (str(row.get("event_name", "-")), "left", False),
-            (str(row.get("single_nr", "")), "right", row.get("single_nr_class") == "rank-top"),
-            (str(row.get("single_cr", "")), "right", row.get("single_cr_class") == "rank-top"),
-            (str(row.get("single_wr", "")), "right", row.get("single_wr_class") == "rank-top"),
-            (str(row.get("single_best", "-")), "right", False),
-            (str(row.get("avg_best", "-")), "right", False),
-            (str(row.get("avg_wr", "")), "right", row.get("avg_wr_class") == "rank-top"),
-            (str(row.get("avg_cr", "")), "right", row.get("avg_cr_class") == "rank-top"),
-            (str(row.get("avg_nr", "")), "right", row.get("avg_nr_class") == "rank-top"),
+            (str(row.get("single_nr", "")), "center", row.get("single_nr_class") == "rank-top"),
+            (str(row.get("single_cr", "")), "center", row.get("single_cr_class") == "rank-top"),
+            (str(row.get("single_wr", "")), "center", row.get("single_wr_class") == "rank-top"),
+            (str(row.get("single_best", "-")), "center", False),
+            (str(row.get("avg_best", "-")), "center", False),
+            (str(row.get("avg_wr", "")), "center", row.get("avg_wr_class") == "rank-top"),
+            (str(row.get("avg_cr", "")), "center", row.get("avg_cr_class") == "rank-top"),
+            (str(row.get("avg_nr", "")), "center", row.get("avg_nr_class") == "rank-top"),
         ]
         x = left
         for col_index, ((_, width), (text, align, is_top)) in enumerate(zip(widths, values)):
@@ -469,8 +415,3 @@ def _image_to_png_bytes(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
-def _resample():
-    try:
-        return Image.Resampling.LANCZOS
-    except AttributeError:
-        return Image.LANCZOS

@@ -1,6 +1,5 @@
 import asyncio
 
-import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
@@ -15,7 +14,6 @@ from ..core.wca_query import WCAQuery
 
 class WCAPicService:
     IMAGE_RENDER_TIMEOUT_SECONDS = 60
-    AVATAR_TIMEOUT_SECONDS = 12
 
     def __init__(self, query: WCAQuery, context: Context):
         self.query = query
@@ -110,32 +108,11 @@ class WCAPicService:
             )
 
     async def _render_person_records_card(self, records_data: dict) -> bytes:
-        avatar_bytes = await self._fetch_avatar_bytes(records_data)
-        image_bytes = render_wca_person_card(records_data, avatar_bytes=avatar_bytes)
+        image_bytes = render_wca_person_card(records_data)
         logger.warning(
             f"WCA PIC 本地绘制完成: size={len(image_bytes)} bytes"
         )
         return image_bytes
-
-    async def _fetch_avatar_bytes(self, records_data: dict) -> bytes | None:
-        person = records_data.get("person") or {}
-        avatar_url = person.get("avatar_thumb_url") or person.get("avatar_url") or ""
-        if not avatar_url:
-            return None
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.AVATAR_TIMEOUT_SECONDS)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(str(avatar_url)) as response:
-                    if response.status != 200:
-                        logger.warning(
-                            f"WCA PIC 头像下载失败，状态码: {response.status}, url={avatar_url}"
-                        )
-                        return None
-                    return await response.read()
-        except Exception as avatar_err:
-            logger.warning(f"WCA PIC 头像下载失败: {avatar_err}")
-            return None
 
     async def _send_image(self, event: AstrMessageEvent, image_bytes: bytes):
         logger.warning(
