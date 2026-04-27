@@ -19,7 +19,7 @@ from .services.one_pk import OnePKService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.4")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.5")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
