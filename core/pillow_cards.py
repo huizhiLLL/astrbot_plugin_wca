@@ -34,7 +34,8 @@ PADDING_Y = 42 * SCALE
 HELP_CARD_GAP = 22 * SCALE
 HELP_ROW_HEIGHT = 118 * SCALE
 PERSON_ROW_HEIGHT = 56 * SCALE
-AVATAR_SIZE = 220 * SCALE
+PHOTO_WIDTH = 460 * SCALE
+PHOTO_HEIGHT = 306 * SCALE
 
 
 class FontBook:
@@ -114,146 +115,258 @@ def render_wca_person_card(
     data = build_person_card_template_data(records_data)
     rows = list(data.get("rows", []))
 
-    canvas_height = max(920 * SCALE, 420 * SCALE + max(1, len(rows)) * PERSON_ROW_HEIGHT + 80 * SCALE)
-    image = Image.new("RGB", (CANVAS_WIDTH, canvas_height), CARD_BG)
+    wrap_pad = 40 * SCALE
+    inner_pad = 40 * SCALE
+    meta_header_h = 52 * SCALE
+    meta_row_h = 62 * SCALE
+    records_header_h = 52 * SCALE
+    records_row_h = 46 * SCALE
+    section_gap = 40 * SCALE
+
+    rows_count = max(1, len(rows))
+    canvas_height = (
+        wrap_pad * 2
+        + 48 * SCALE
+        + 30 * SCALE
+        + PHOTO_HEIGHT
+        + 30 * SCALE
+        + meta_header_h
+        + meta_row_h
+        + section_gap
+        + 32 * SCALE
+        + 24 * SCALE
+        + records_header_h
+        + rows_count * records_row_h
+    )
+    image = Image.new("RGB", (CANVAS_WIDTH, canvas_height), "#FFFFFF")
     draw = ImageDraw.Draw(image)
 
-    _draw_rounded_panel(draw, (26 * SCALE, 24 * SCALE, CANVAS_WIDTH - 26 * SCALE, canvas_height - 24 * SCALE), radius=30 * SCALE)
+    wrap_left = wrap_pad
+    wrap_top = wrap_pad
+    wrap_right = CANVAS_WIDTH - wrap_pad
+    content_w = wrap_right - wrap_left
 
-    avatar = _prepare_avatar(avatar_bytes)
-    image.paste(avatar, (PADDING_X, 56 * SCALE), avatar)
+    name = str(data.get("name", "未知"))
+    name_bbox = draw.textbbox((0, 0), name, font=fonts.title)
+    name_w = name_bbox[2] - name_bbox[0]
+    draw.text(((CANVAS_WIDTH - name_w) / 2, wrap_top), name, font=fonts.title, fill="#222222")
 
-    text_left = PADDING_X + AVATAR_SIZE + 32 * SCALE
-    draw.text((text_left, 68 * SCALE), str(data.get("name", "未知")), font=fonts.title, fill=TITLE_COLOR)
-    subtitle = f"{data.get('wca_id', '-')}  ·  {data.get('country_name', '-')}  ·  {data.get('gender', '-')}"
-    draw.text((text_left, 124 * SCALE), subtitle, font=fonts.subtitle, fill=MUTED_TEXT)
+    avatar_top = wrap_top + 48 * SCALE
+    avatar = _prepare_photo(avatar_bytes, old_style=True)
+    avatar_x = (CANVAS_WIDTH - PHOTO_WIDTH) // 2
+    image.paste(avatar, (avatar_x, avatar_top), avatar)
 
-    metrics = [
-        ("地区", str(data.get("flag_text", "")) + " " + str(data.get("country_name", "-"))),
-        ("比赛", str(data.get("competition_count", "-"))),
-        ("复原", str(data.get("total_solves", "-"))),
+    meta_top = avatar_top + PHOTO_HEIGHT + 30 * SCALE
+    meta_cols = [
+        ("国家/地区", 260 * SCALE),
+        ("WCA ID", 270 * SCALE),
+        ("性别", 140 * SCALE),
+        ("比赛", 160 * SCALE),
+        ("复原次数", 210 * SCALE),
     ]
-    metric_y = 172 * SCALE
-    metric_w = 250 * SCALE
-    for index, (label, value) in enumerate(metrics):
-        left = text_left + index * (metric_w + 18 * SCALE)
-        box = (left, metric_y, left + metric_w, metric_y + 82 * SCALE)
-        _draw_rounded_panel(draw, box, radius=18 * SCALE, fill=ACCENT_LIGHT, outline=ACCENT_LIGHT)
-        draw.text((left + 18 * SCALE, metric_y + 14 * SCALE), label, font=fonts.body_small, fill=MUTED_TEXT)
-        draw.text((left + 18 * SCALE, metric_y + 40 * SCALE), value, font=fonts.metric, fill=ACCENT)
-
-    section_top = 308 * SCALE
-    draw.text((PADDING_X, section_top), "WCA 最佳成绩", font=fonts.h3, fill=TITLE_COLOR)
-    draw.text(
-        (PADDING_X, section_top + 34 * SCALE),
-        "Single 与 Average 同表展示，排名越靠前越亮眼。",
-        font=fonts.body_small,
-        fill=MUTED_TEXT,
+    meta_values = [
+        f"{str(data.get('flag_text', '')).strip()} {str(data.get('country_name', '-')).strip()}".strip(),
+        str(data.get("wca_id", "-")),
+        str(data.get("gender", "-")),
+        str(data.get("competition_count", "-")),
+        str(data.get("total_solves", "-")),
+    ]
+    _draw_simple_table(
+        draw,
+        top=meta_top,
+        left=wrap_left,
+        widths=meta_cols,
+        row_values=meta_values,
+        header_height=meta_header_h,
+        row_height=meta_row_h,
+        header_bg="#F4F4F4",
+        alt_bg="#FFFFFF",
+        text_fill="#222222",
+        header_fill="#333333",
+        body_font=fonts.body_small,
+        header_font=fonts.body_small,
+        alignments=["center"] * len(meta_cols),
+        zebra=False,
     )
 
-    table_top = section_top + 86 * SCALE
-    table_left = PADDING_X
-    table_width = CANVAS_WIDTH - PADDING_X * 2
-    columns = [
-        ("项目", 190 * SCALE),
-        ("NR", 72 * SCALE),
-        ("CR", 72 * SCALE),
-        ("WR", 72 * SCALE),
-        ("Single", 160 * SCALE),
-        ("Average", 160 * SCALE),
-        ("WR", 72 * SCALE),
-        ("CR", 72 * SCALE),
-        ("NR", 72 * SCALE),
+    section_title = "当前个人记录"
+    section_top = meta_top + meta_header_h + meta_row_h + section_gap
+    sec_bbox = draw.textbbox((0, 0), section_title, font=fonts.h3)
+    sec_w = sec_bbox[2] - sec_bbox[0]
+    draw.text(((CANVAS_WIDTH - sec_w) / 2, section_top), section_title, font=fonts.h3, fill="#222222")
+
+    records_top = section_top + 44 * SCALE
+    record_cols = [
+        ("项目", 260 * SCALE),
+        ("NR", 82 * SCALE),
+        ("CR", 82 * SCALE),
+        ("WR", 82 * SCALE),
+        ("单次", 170 * SCALE),
+        ("平均", 170 * SCALE),
+        ("WR", 82 * SCALE),
+        ("CR", 82 * SCALE),
+        ("NR", 82 * SCALE),
     ]
-
-    header_box = (table_left, table_top, table_left + table_width, table_top + PERSON_ROW_HEIGHT)
-    _draw_rounded_panel(draw, header_box, radius=18 * SCALE, fill=TABLE_HEADER_BG, outline=TABLE_HEADER_BG)
-
-    x = table_left + 18 * SCALE
-    for title, width in columns:
-        draw.text((x, table_top + 16 * SCALE), title, font=fonts.body_small, fill=TITLE_COLOR)
-        x += width
-
-    current_top = table_top + PERSON_ROW_HEIGHT + 10 * SCALE
-    if not rows:
-        empty_box = (table_left, current_top, table_left + table_width, current_top + 120 * SCALE)
-        _draw_rounded_panel(draw, empty_box, radius=18 * SCALE, fill=PANEL_BG, outline=PANEL_BORDER)
-        draw.text((table_left + 24 * SCALE, current_top + 42 * SCALE), "暂无有效成绩记录", font=fonts.h3, fill=MUTED_TEXT)
-    else:
-        for index, row in enumerate(rows):
-            row_bottom = current_top + PERSON_ROW_HEIGHT
-            fill = TABLE_ALT_BG if index % 2 == 0 else PANEL_BG
-            _draw_rounded_panel(
-                draw,
-                (table_left, current_top, table_left + table_width, row_bottom),
-                radius=16 * SCALE,
-                fill=fill,
-                outline=PANEL_BORDER,
-            )
-            row_values = [
-                str(row.get("event_name", "-")),
-                str(row.get("single_nr", "")),
-                str(row.get("single_cr", "")),
-                str(row.get("single_wr", "")),
-                str(row.get("single_best", "-")),
-                str(row.get("avg_best", "-")),
-                str(row.get("avg_wr", "")),
-                str(row.get("avg_cr", "")),
-                str(row.get("avg_nr", "")),
-            ]
-            highlight_flags = [
-                False,
-                row.get("single_nr_class") == "rank-top",
-                row.get("single_cr_class") == "rank-top",
-                row.get("single_wr_class") == "rank-top",
-                False,
-                False,
-                row.get("avg_wr_class") == "rank-top",
-                row.get("avg_cr_class") == "rank-top",
-                row.get("avg_nr_class") == "rank-top",
-            ]
-            x = table_left + 18 * SCALE
-            for (title, width), value, highlight in zip(columns, row_values, highlight_flags):
-                if highlight and value:
-                    pill_w = max(48 * SCALE, draw.textbbox((0, 0), value, font=fonts.body_small)[2] + 20 * SCALE)
-                    pill_box = (
-                        x - 8 * SCALE,
-                        current_top + 12 * SCALE,
-                        x - 8 * SCALE + pill_w,
-                        current_top + 12 * SCALE + 30 * SCALE,
-                    )
-                    _draw_rounded_panel(draw, pill_box, radius=14 * SCALE, fill=RANK_TOP_BG, outline=RANK_TOP_BG)
-                    draw.text((x + 2 * SCALE, current_top + 16 * SCALE), value, font=fonts.body_small, fill=RANK_TOP_TEXT)
-                else:
-                    draw.text((x, current_top + 15 * SCALE), value, font=fonts.body_small, fill=TEXT_COLOR)
-                x += width
-            current_top = row_bottom + 8 * SCALE
+    _draw_records_table(
+        draw,
+        top=records_top,
+        left=wrap_left,
+        widths=record_cols,
+        rows=rows,
+        header_height=records_header_h,
+        row_height=records_row_h,
+        fonts=fonts,
+    )
 
     return _image_to_png_bytes(image)
 
 
-def _prepare_avatar(avatar_bytes: bytes | None) -> Image.Image:
-    avatar = None
+def _prepare_photo(avatar_bytes: bytes | None, old_style: bool = False) -> Image.Image:
+    photo = None
     if avatar_bytes:
         try:
-            avatar = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
+            photo = Image.open(io.BytesIO(avatar_bytes)).convert("RGBA")
         except Exception:
-            avatar = None
+            photo = None
 
-    if avatar is None:
-        avatar = Image.new("RGBA", (AVATAR_SIZE, AVATAR_SIZE), "#E9EEF9")
-        draw = ImageDraw.Draw(avatar)
-        _draw_rounded_panel(draw, (0, 0, AVATAR_SIZE - 1, AVATAR_SIZE - 1), radius=28 * SCALE, fill="#E9EEF9", outline="#DCE3F4")
-        draw.ellipse((56 * SCALE, 34 * SCALE, 164 * SCALE, 142 * SCALE), fill="#C8D4F3")
-        draw.rounded_rectangle((44 * SCALE, 126 * SCALE, 176 * SCALE, 214 * SCALE), radius=42 * SCALE, fill="#C8D4F3")
-        return avatar
+    if photo is None:
+        photo = Image.new("RGBA", (PHOTO_WIDTH, PHOTO_HEIGHT), "#F5F5F5" if old_style else "#E9EEF9")
+        draw = ImageDraw.Draw(photo)
+        radius = 4 * SCALE if old_style else 28 * SCALE
+        fill = "#F5F5F5" if old_style else "#E9EEF9"
+        draw.rounded_rectangle((0, 0, PHOTO_WIDTH - 1, PHOTO_HEIGHT - 1), radius=radius, fill=fill)
+        if not old_style:
+            cx = PHOTO_WIDTH // 2
+            draw.ellipse((cx - 54 * SCALE, 64 * SCALE, cx + 54 * SCALE, 172 * SCALE), fill="#C8D4F3")
+            draw.rounded_rectangle((cx - 90 * SCALE, 182 * SCALE, cx + 90 * SCALE, 330 * SCALE), radius=42 * SCALE, fill="#C8D4F3")
+        return photo
 
-    avatar = avatar.resize((AVATAR_SIZE, AVATAR_SIZE), _resample())
-    mask = Image.new("L", (AVATAR_SIZE, AVATAR_SIZE), 0)
+    photo.thumbnail((PHOTO_WIDTH, PHOTO_HEIGHT), _resample())
+    canvas = Image.new("RGBA", (PHOTO_WIDTH, PHOTO_HEIGHT), (245, 245, 245, 255) if old_style else (233, 238, 249, 255))
+    px = (PHOTO_WIDTH - photo.width) // 2
+    py = (PHOTO_HEIGHT - photo.height) // 2
+    canvas.paste(photo, (px, py), photo)
+    mask = Image.new("L", (PHOTO_WIDTH, PHOTO_HEIGHT), 0)
     mask_draw = ImageDraw.Draw(mask)
-    mask_draw.rounded_rectangle((0, 0, AVATAR_SIZE, AVATAR_SIZE), radius=28, fill=255)
-    avatar.putalpha(mask)
-    return avatar
+    mask_draw.rounded_rectangle((0, 0, PHOTO_WIDTH, PHOTO_HEIGHT), radius=(4 if old_style else 28) * SCALE, fill=255)
+    canvas.putalpha(mask)
+    return canvas
+
+
+def _draw_simple_table(
+    draw: ImageDraw.ImageDraw,
+    top: int,
+    left: int,
+    widths: list[tuple[str, int]],
+    row_values: list[str],
+    header_height: int,
+    row_height: int,
+    header_bg: str,
+    alt_bg: str,
+    text_fill: str,
+    header_fill: str,
+    body_font: ImageFont.ImageFont,
+    header_font: ImageFont.ImageFont,
+    alignments: list[str],
+    zebra: bool,
+) -> None:
+    x = left
+    for index, ((title, width), value) in enumerate(zip(widths, row_values)):
+        draw.rectangle((x, top, x + width, top + header_height), fill=header_bg)
+        _draw_cell_text(draw, title, (x, top, x + width, top + header_height), header_font, header_fill, alignments[index])
+        draw.rectangle((x, top + header_height, x + width, top + header_height + row_height), fill=alt_bg)
+        _draw_cell_text(draw, value, (x, top + header_height, x + width, top + header_height + row_height), body_font, text_fill, alignments[index])
+        x += width
+
+
+def _draw_records_table(
+    draw: ImageDraw.ImageDraw,
+    top: int,
+    left: int,
+    widths: list[tuple[str, int]],
+    rows: list[dict],
+    header_height: int,
+    row_height: int,
+    fonts: FontBook,
+) -> None:
+    x = left
+    for index, (title, width) in enumerate(widths):
+        _draw_cell_text(
+            draw,
+            title,
+            (x, top, x + width, top + header_height),
+            fonts.body_small,
+            "#333333",
+            "left" if index == 0 else "right",
+            pad_x=20 * SCALE if index == 0 else 10 * SCALE,
+        )
+        x += width
+    draw.line((left, top + header_height, left + sum(width for _, width in widths), top + header_height), fill="#E0E0E0", width=2 * SCALE)
+
+    if not rows:
+        _draw_cell_text(
+            draw,
+            "暂无有效成绩记录",
+            (left, top + header_height, left + sum(width for _, width in widths), top + header_height + row_height),
+            fonts.body,
+            "#777777",
+            "center",
+        )
+        return
+
+    current_top = top + header_height
+    for idx, row in enumerate(rows):
+        bg = "#F6F6F6" if idx % 2 == 0 else "#FFFFFF"
+        draw.rectangle((left, current_top, left + sum(width for _, width in widths), current_top + row_height), fill=bg)
+        values = [
+            (str(row.get("event_name", "-")), "left", False),
+            (str(row.get("single_nr", "")), "right", row.get("single_nr_class") == "rank-top"),
+            (str(row.get("single_cr", "")), "right", row.get("single_cr_class") == "rank-top"),
+            (str(row.get("single_wr", "")), "right", row.get("single_wr_class") == "rank-top"),
+            (str(row.get("single_best", "-")), "right", False),
+            (str(row.get("avg_best", "-")), "right", False),
+            (str(row.get("avg_wr", "")), "right", row.get("avg_wr_class") == "rank-top"),
+            (str(row.get("avg_cr", "")), "right", row.get("avg_cr_class") == "rank-top"),
+            (str(row.get("avg_nr", "")), "right", row.get("avg_nr_class") == "rank-top"),
+        ]
+        x = left
+        for col_index, ((_, width), (text, align, is_top)) in enumerate(zip(widths, values)):
+            font = fonts.body_small if col_index not in (4, 5) else fonts.body_small
+            fill = "#00DE00" if is_top and text else ("#111111" if col_index in (4, 5) else ("#777777" if col_index in (1,2,3,6,7,8) else "#333333"))
+            _draw_cell_text(
+                draw,
+                text,
+                (x, current_top, x + width, current_top + row_height),
+                font,
+                fill,
+                align,
+                pad_x=20 * SCALE if align == "left" else 10 * SCALE,
+            )
+            x += width
+        current_top += row_height
+
+
+def _draw_cell_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    box: tuple[int, int, int, int],
+    font: ImageFont.ImageFont,
+    fill: str,
+    align: str,
+    pad_x: int = 12,
+) -> None:
+    x1, y1, x2, y2 = box
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    y = y1 + (y2 - y1 - text_h) / 2 - bbox[1]
+    if align == "left":
+        x = x1 + pad_x
+    elif align == "right":
+        x = x2 - pad_x - text_w
+    else:
+        x = x1 + (x2 - x1 - text_w) / 2
+    draw.text((x, y), text, font=font, fill=fill)
 
 
 def _draw_rounded_panel(

@@ -4,6 +4,9 @@ import unittest
 from PIL import Image
 
 from astrbot_plugin_wca.core.pillow_cards import (
+    PHOTO_HEIGHT,
+    PHOTO_WIDTH,
+    SCALE,
     render_cube_help_card,
     render_wca_person_card,
 )
@@ -28,6 +31,10 @@ class PillowCardsTest(unittest.TestCase):
             self.assertEqual(image.format, "PNG")
             self.assertGreaterEqual(image.size[0], 1000)
             self.assertGreaterEqual(image.size[1], 600)
+
+    def test_wca_person_card_photo_area_uses_smaller_preview_size(self):
+        self.assertEqual(PHOTO_WIDTH, 460 * SCALE)
+        self.assertEqual(PHOTO_HEIGHT, 306 * SCALE)
 
     def test_render_wca_person_card_returns_valid_image(self):
         records_data = {
