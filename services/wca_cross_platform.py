@@ -250,8 +250,8 @@ class WCAPRService:
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
         reaction_feedback: CommandReactionFeedback,
-        wca_bindings: WCABindingStore,
-        one_bindings: OneBindingStore,
+        wca_bindings: WCABindingStore | None = None,
+        one_bindings: OneBindingStore | None = None,
     ):
         self.query = query
         self.one_client = one_client
@@ -394,6 +394,9 @@ class WCAPRService:
         args: str,
     ) -> tuple[tuple[str, str] | None, str | None]:
         explicit_text = strip_mentions(args)
+        if self.wca_bindings is None or self.one_bindings is None:
+            return None, None
+
         target_qq = extract_first_mentioned_qq(event)
         if target_qq and not explicit_text:
             wca_id = self.wca_bindings.get(target_qq)
