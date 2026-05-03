@@ -7,6 +7,7 @@ from astrbot.api.star import Context
 
 from .wca_pic_template import format_person_records_for_pic
 from ..core.pillow_cards import render_wca_person_card
+from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import WCABindingStore, resolve_bound_wca_search_input
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -15,10 +16,17 @@ from ..core.wca_query import WCAQuery
 class WCAPicService:
     IMAGE_RENDER_TIMEOUT_SECONDS = 60
 
-    def __init__(self, query: WCAQuery, context: Context, bindings: WCABindingStore):
+    def __init__(
+        self,
+        query: WCAQuery,
+        context: Context,
+        bindings: WCABindingStore,
+        reaction_feedback: CommandReactionFeedback,
+    ):
         self.query = query
         self.context = context
         self.bindings = bindings
+        self.reaction_feedback = reaction_feedback
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
@@ -48,9 +56,11 @@ class WCAPicService:
                 "示例: /wcapic 李华"
             ).use_t2i(False)
             return
-        yield event.plain_result(
-            "正在生成 WCA 成绩图...（查看原图更加清晰）"
-        ).use_t2i(False)
+        reaction_sent = await self.reaction_feedback.send_processing_reaction(event)
+        if not reaction_sent:
+            yield event.plain_result(
+                "正在生成 WCA 成绩图...（查看原图更加清晰）"
+            ).use_t2i(False)
 
         try:
             result = await self.lookup.resolve_unique(search_input)

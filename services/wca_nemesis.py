@@ -207,10 +207,16 @@ class WCANemesisService:
 
 
 class WCAVersionService:
-    def __init__(self, api_base: str):
+    def __init__(
+        self,
+        api_base: str,
+        reaction_feedback: CommandReactionFeedback | None = None,
+    ):
         self.client = WCANemesisApiClient(api_base)
+        self.reaction_feedback = reaction_feedback or CommandReactionFeedback()
 
     async def handle(self, event: AstrMessageEvent):
+        await self.reaction_feedback.send_processing_reaction(event)
         export_date = await self.client.get_version()
         if not export_date:
             yield event.plain_result("查询版本失败了，请稍后重试哦").use_t2i(False)

@@ -26,7 +26,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.10")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.11")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -70,7 +70,10 @@ class WCAPlugin(Star):
                 self.wca_query, self.wca_bindings
             )
             self.wca_pic = WCAPicService(
-                self.wca_query, self.context, self.wca_bindings
+                self.wca_query,
+                self.context,
+                self.wca_bindings,
+                self.command_reaction_feedback,
             )
             self.wca_pk = WCAPKService(
                 self.wca_query, self.command_reaction_feedback, self.wca_bindings
@@ -84,7 +87,10 @@ class WCAPlugin(Star):
                 self.command_reaction_feedback,
                 self.wca_bindings,
             )
-            self.wca_version = WCAVersionService(self.nemesis_api_base)
+            self.wca_version = WCAVersionService(
+                self.nemesis_api_base,
+                self.command_reaction_feedback,
+            )
             self.one_client = PersonalRecordAPIClient()
             self.one_handler = OneRecordHandler(self.one_client)
             self.one_pk = OnePKService(
@@ -99,7 +105,10 @@ class WCAPlugin(Star):
                 self.one_handler,
                 self.command_reaction_feedback,
             )
-            self.cube_help_service = WCACubeHelpService(self.context)
+            self.cube_help_service = WCACubeHelpService(
+                self.context,
+                self.command_reaction_feedback,
+            )
             self.one_service = WCAOneService(
                 self.one_client,
                 self.one_handler,

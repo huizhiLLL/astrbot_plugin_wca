@@ -4,15 +4,22 @@ from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
 
 from ..core.pillow_cards import render_cube_help_card
+from ..core.reaction_feedback import CommandReactionFeedback
 
 
 class WCACubeHelpService:
-    def __init__(self, context: Context):
+    def __init__(
+        self,
+        context: Context,
+        reaction_feedback: CommandReactionFeedback,
+    ):
         self.context = context
+        self.reaction_feedback = reaction_feedback
 
     async def handle(self, event: AstrMessageEvent):
         commands_data = prepare_cube_help_data()
         try:
+            await self.reaction_feedback.send_processing_reaction(event)
             image_bytes = render_cube_help_card(commands_data)
             logger.warning(
                 f"cube帮助 准备发送图片: size={len(image_bytes)} bytes"

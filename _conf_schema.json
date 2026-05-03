@@ -1,7 +1,7 @@
 {
     "enable_command_reaction": {
         "description": "启用命令接收表情反馈",
-        "hint": "开启后，/wcapk、/pr、/prpk、/宿敌、/近期比赛 在收到命令后会优先尝试给原消息贴表情，代替“正在查询中”的即时文字提示",
+        "hint": "开启后，/cube帮助、/wcapic、/wcapk、/onepk、/pktwo、/pr、/prpk、/宿敌、/版本、/近期比赛 在收到命令后会优先尝试给原消息贴表情，代替“正在查询中”的即时文字提示",
         "type": "bool",
         "default": true
     },
