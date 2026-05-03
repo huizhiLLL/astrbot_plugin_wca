@@ -40,7 +40,7 @@ def prepare_cube_help_data() -> dict[str, object]:
             {"name": "/onepk", "desc": "one 成绩 PK", "example": "/onepk @某人 或 /onepk @甲 @乙"},
             {"name": "/pktwo", "desc": "同一选手的 WCA / one 双平台 PK", "example": "/pktwo 李华 或 /pktwo 2026LIHU01 1234"},
             {"name": "/pr", "desc": "双平台 PR 查询", "example": "/pr 或 /pr @某人"},
-            {"name": "/prpk", "desc": "双平台 PR PK 对比", "example": "/prpk 李华 张伟"},
+            {"name": "/prpk", "desc": "双平台 PR PK 对比", "example": "/prpk @某人 或 /prpk @甲 @乙"},
             {"name": "/近期比赛", "desc": "查询近期赛事", "example": "/近期比赛"},
             {"name": "/宿敌", "desc": "查询 WCA 宿敌", "example": "/宿敌 或 /宿敌 @某人"},
             {"name": "/版本", "desc": "查询宿敌数据库版本日期", "example": "/版本"},

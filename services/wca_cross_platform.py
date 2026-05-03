@@ -16,6 +16,7 @@ from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import (
     WCABindingStore,
     extract_first_mentioned_qq,
+    extract_mentioned_qqs,
     strip_first_command_token,
     strip_mentions,
 )
@@ -460,40 +461,61 @@ class WCAPRPKService:
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
         reaction_feedback: CommandReactionFeedback,
+        wca_bindings: WCABindingStore,
+        one_bindings: OneBindingStore,
     ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
         self.reaction_feedback = reaction_feedback
+        self.wca_bindings = wca_bindings
+        self.one_bindings = one_bindings
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
-        parts = args.split(maxsplit=3) if args else []
-        if len(parts) < 2:
-            yield event.plain_result(
-                "参数不够呢，请提供两个选手哦~\n"
-                "用法：/prpk [选手1] [选手2]\n"
-                "同名请用：/prpk [WCAID1] [oneID1] [WCAID2] [oneID2]"
-            ).use_t2i(False)
+        bound_inputs, binding_error = self._resolve_bound_prpk_inputs(event, args)
+        if binding_error:
+            yield event.plain_result(binding_error).use_t2i(False)
             return
 
         await self.reaction_feedback.send_processing_reaction(event)
 
-        if len(parts) >= 4:
+        if bound_inputs:
             player1 = await self._resolve_player(
-                parts[0].strip(),
-                forced_wca_id=parts[0].strip(),
-                forced_one_id=parts[1].strip(),
+                bound_inputs[0][0],
+                forced_wca_id=bound_inputs[0][0],
+                forced_one_id=bound_inputs[0][1],
             )
             player2 = await self._resolve_player(
-                parts[2].strip(),
-                forced_wca_id=parts[2].strip(),
-                forced_one_id=parts[3].strip(),
+                bound_inputs[1][0],
+                forced_wca_id=bound_inputs[1][0],
+                forced_one_id=bound_inputs[1][1],
             )
         else:
-            player1 = await self._resolve_player(parts[0].strip())
-            player2 = await self._resolve_player(parts[1].strip())
+            parts = args.split(maxsplit=3) if args else []
+            if len(parts) < 2:
+                yield event.plain_result(
+                    "参数不够呢，请提供两个选手哦~\n"
+                    "用法：/prpk [选手1] [选手2]\n"
+                    "同名请用：/prpk [WCAID1] [oneID1] [WCAID2] [oneID2]"
+                ).use_t2i(False)
+                return
+
+            if len(parts) >= 4:
+                player1 = await self._resolve_player(
+                    parts[0].strip(),
+                    forced_wca_id=parts[0].strip(),
+                    forced_one_id=parts[1].strip(),
+                )
+                player2 = await self._resolve_player(
+                    parts[2].strip(),
+                    forced_wca_id=parts[2].strip(),
+                    forced_one_id=parts[3].strip(),
+                )
+            else:
+                player1 = await self._resolve_player(parts[0].strip())
+                player2 = await self._resolve_player(parts[1].strip())
 
         if (
             not player1.wca_person
@@ -543,6 +565,72 @@ class WCAPRPKService:
             w1_name, w2_name, w1_records, w2_records, one1_resp, one2_resp
         )
         yield event.plain_result("\n".join(lines)).use_t2i(False)
+
+    def _resolve_bound_prpk_inputs(
+        self,
+        event: AstrMessageEvent,
+        args: str,
+    ) -> tuple[tuple[tuple[str, str], tuple[str, str]] | None, str | None]:
+        mentioned_qqs = extract_mentioned_qqs(event)
+        if len(mentioned_qqs) >= 2:
+            player1, error1 = self._get_bound_platform_ids(mentioned_qqs[0], "这个 QQ")
+            if error1:
+                return None, error1
+            player2, error2 = self._get_bound_platform_ids(mentioned_qqs[1], "这个 QQ")
+            if error2:
+                return None, error2
+            return (player1, player2), None
+
+        explicit_text = strip_mentions(args)
+        if explicit_text:
+            return None, None
+
+        sender_qq = event.get_sender_id()
+        sender_text = str(sender_qq).strip() if sender_qq is not None else ""
+        non_sender_mentions = [
+            qq_id for qq_id in mentioned_qqs if qq_id != sender_text
+        ]
+        if len(non_sender_mentions) == 1:
+            player1, error1 = self._get_bound_platform_ids(sender_qq, "你")
+            if error1:
+                return None, error1
+            player2, error2 = self._get_bound_platform_ids(
+                non_sender_mentions[0],
+                "这个 QQ",
+            )
+            if error2:
+                return None, error2
+            return (player1, player2), None
+
+        return None, None
+
+    def _get_bound_platform_ids(
+        self,
+        qq_id: str | int | None,
+        subject: str,
+    ) -> tuple[tuple[str, str] | None, str | None]:
+        wca_id = self.wca_bindings.get(qq_id)
+        one_id = self.one_bindings.get(qq_id)
+        qq_text = str(qq_id).strip() if qq_id is not None else ""
+        if not wca_id:
+            if subject == "你":
+                return (
+                    None,
+                    "你还没有绑定 WCAID 呢\n"
+                    "用法: /wca绑定 <WCAID或姓名>\n"
+                    "示例: /wca绑定 2026LIHU01",
+                )
+            return None, f"这个 QQ（{qq_text}）还没有绑定 WCAID 呢"
+        if one_id is None:
+            if subject == "你":
+                return (
+                    None,
+                    "你还没有绑定 oneID 呢\n"
+                    "用法: /one绑定 <oneID或用户名>\n"
+                    "示例: /one绑定 1234",
+                )
+            return None, f"这个 QQ（{qq_text}）还没有绑定 oneID 呢"
+        return (wca_id, str(one_id)), None
 
     async def _resolve_player(
         self,

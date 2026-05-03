@@ -26,7 +26,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.9")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.10")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -123,6 +123,8 @@ class WCAPlugin(Star):
                 self.one_client,
                 self.one_handler,
                 self.command_reaction_feedback,
+                self.wca_bindings,
+                self.one_bindings,
             )
             logger.info("WCA 插件初始化完成")
 
