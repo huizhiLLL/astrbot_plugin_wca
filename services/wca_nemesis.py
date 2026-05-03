@@ -3,7 +3,7 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
 from ..core.reaction_feedback import CommandReactionFeedback
-from ..core.wca_bindings import strip_first_command_token
+from ..core.wca_bindings import WCABindingStore, resolve_bound_wca_search_input
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
@@ -77,14 +77,32 @@ class WCANemesisService:
         query: WCAQuery,
         api_base: str,
         reaction_feedback: CommandReactionFeedback,
+        bindings: WCABindingStore,
     ):
         self.query = query
         self.client = WCANemesisApiClient(api_base)
         self.lookup = WCAPersonLookupService(query)
         self.reaction_feedback = reaction_feedback
+        self.bindings = bindings
 
     async def handle(self, event: AstrMessageEvent):
-        search_input = strip_first_command_token(event.message_str)
+        search_input, missing_binding, qq_id = resolve_bound_wca_search_input(
+            event, self.bindings
+        )
+        if missing_binding == "target":
+            yield event.plain_result(
+                f"这个 QQ（{qq_id}）还没有绑定 WCAID 呢"
+            ).use_t2i(False)
+            return
+
+        if missing_binding == "sender":
+            yield event.plain_result(
+                "你还没有绑定 WCAID 呢\n"
+                "用法: /wca绑定 <WCAID或姓名>\n"
+                "示例: /wca绑定 2026LIHU01"
+            ).use_t2i(False)
+            return
+
         if not search_input:
             yield event.plain_result(
                 "请提供 WCAID 或姓名哦\n"

@@ -6,8 +6,8 @@ from astrbot.api.event import AstrMessageEvent
 
 from .wca_bindings import (
     WCABindingStore,
-    extract_first_mentioned_qq,
     normalize_wca_id,
+    resolve_bound_wca_search_input,
     strip_first_command_token,
     strip_mentions,
 )
@@ -218,31 +218,21 @@ class WCACommandService:
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        message_str = event.message_str.strip()
-        search_input = strip_first_command_token(message_str)
-        target_qq = extract_first_mentioned_qq(event)
-
-        if target_qq:
-            bound_wca_id = self.bindings.get(target_qq)
-            if not bound_wca_id:
-                yield event.plain_result(
-                    f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢"
-                ).use_t2i(False)
-                return
-            search_input = bound_wca_id
-        elif not search_input:
-            sender_qq = event.get_sender_id()
-            bound_wca_id = self.bindings.get(sender_qq)
-            if not bound_wca_id:
-                yield event.plain_result(
-                    "你还没有绑定 WCAID 呢\n"
-                    "用法: /wca绑定 <WCAID或姓名>\n"
-                    "示例: /wca绑定 2026LIHU01"
-                ).use_t2i(False)
-                return
-            search_input = bound_wca_id
-        else:
-            search_input = strip_mentions(search_input)
+        search_input, missing_binding, qq_id = resolve_bound_wca_search_input(
+            event, self.bindings
+        )
+        if missing_binding == "target":
+            yield event.plain_result(
+                f"这个 QQ（{qq_id}）还没有绑定 WCAID 呢"
+            ).use_t2i(False)
+            return
+        if missing_binding == "sender":
+            yield event.plain_result(
+                "你还没有绑定 WCAID 呢\n"
+                "用法: /wca绑定 <WCAID或姓名>\n"
+                "示例: /wca绑定 2026LIHU01"
+            ).use_t2i(False)
+            return
 
         if not search_input:
             yield event.plain_result(

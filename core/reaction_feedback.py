@@ -10,7 +10,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 @dataclass(slots=True)
 class CommandReactionFeedback:
     enabled: bool = True
-    emoji_id: int = 124
+    emoji_id: int = 181
     emoji_type: str = "1"
 
     async def send_processing_reaction(self, event: AstrMessageEvent) -> bool:

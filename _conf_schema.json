@@ -9,7 +9,7 @@
         "description": "命令接收表情 ID",
         "hint": "用于 QQ / aiocqhttp 原生贴表情的 emoji_id",
         "type": "int",
-        "default": 124,
+        "default": 181,
         "slider": {
             "min": 1,
             "max": 500,

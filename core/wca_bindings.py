@@ -71,6 +71,20 @@ def normalize_wca_id(value: Any) -> str | None:
 
 
 def extract_first_mentioned_qq(event: Any) -> str | None:
+    mentioned = extract_mentioned_qqs(event)
+    return mentioned[0] if mentioned else None
+
+
+def extract_mentioned_qqs(event: Any) -> list[str]:
+    qqs: list[str] = []
+
+    def append_qq(value: Any) -> None:
+        if value is None:
+            return
+        text = str(value).strip()
+        if text.isdigit() and text not in qqs:
+            qqs.append(text)
+
     getter = getattr(event, "get_messages", None)
     if callable(getter):
         try:
@@ -81,25 +95,44 @@ def extract_first_mentioned_qq(event: Any) -> str | None:
             messages = []
         for seg in messages[1:]:
             if At is not None and isinstance(seg, At):
-                qq = getattr(seg, "qq", None)
-                if qq is not None:
-                    text = str(qq).strip()
-                    if text.isdigit():
-                        return text
+                append_qq(getattr(seg, "qq", None))
+                continue
             for attr in ("qq", "user_id", "userId"):
-                value = getattr(seg, attr, None)
-                if value is not None and str(value).strip().isdigit():
-                    return str(value).strip()
+                append_qq(getattr(seg, attr, None))
 
     raw = getattr(event, "message_str", "")
     if isinstance(raw, str):
         for arg in raw.split():
             if arg.startswith("@") and arg[1:].isdigit():
-                return arg[1:]
-        m = re.search(r"qq=(\d{5,})", raw)
-        if m:
-            return m.group(1)
-    return None
+                append_qq(arg[1:])
+        for match in re.finditer(r"qq=(\d{5,})", raw):
+            append_qq(match.group(1))
+    return qqs
+
+
+def resolve_bound_wca_search_input(
+    event: Any,
+    bindings: WCABindingStore,
+) -> tuple[str, str | None, str | None]:
+    search_input = strip_first_command_token(getattr(event, "message_str", ""))
+    target_qq = extract_first_mentioned_qq(event)
+
+    if target_qq:
+        bound_wca_id = bindings.get(target_qq)
+        if not bound_wca_id:
+            return "", "target", target_qq
+        return bound_wca_id, None, target_qq
+
+    search_input = strip_mentions(search_input)
+    if search_input:
+        return search_input, None, None
+
+    sender_getter = getattr(event, "get_sender_id", None)
+    sender_qq = sender_getter() if callable(sender_getter) else None
+    bound_wca_id = bindings.get(sender_qq)
+    if not bound_wca_id:
+        return "", "sender", str(sender_qq) if sender_qq is not None else None
+    return bound_wca_id, None, str(sender_qq) if sender_qq is not None else None
 
 
 def strip_command_prefix(message: str, command_name: str) -> str:

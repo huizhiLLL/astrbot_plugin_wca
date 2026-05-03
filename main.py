@@ -20,7 +20,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.6")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.7")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -47,7 +47,7 @@ class WCAPlugin(Star):
         self.nemesis_api_base = "https://wca.huizhi.pro"
         self.command_reaction_feedback = CommandReactionFeedback(
             enabled=bool(config.get("enable_command_reaction", True)),
-            emoji_id=int(config.get("command_reaction_emoji_id", 124)),
+            emoji_id=int(config.get("command_reaction_emoji_id", 181)),
         )
 
     async def initialize(self):
@@ -61,9 +61,11 @@ class WCAPlugin(Star):
             self.wca_bind_command = WCABindCommandService(
                 self.wca_query, self.wca_bindings
             )
-            self.wca_pic = WCAPicService(self.wca_query, self.context)
+            self.wca_pic = WCAPicService(
+                self.wca_query, self.context, self.wca_bindings
+            )
             self.wca_pk = WCAPKService(
-                self.wca_query, self.command_reaction_feedback
+                self.wca_query, self.command_reaction_feedback, self.wca_bindings
             )
             self.recent_competitions = RecentCompetitionsService(
                 reaction_feedback=self.command_reaction_feedback
@@ -72,6 +74,7 @@ class WCAPlugin(Star):
                 self.wca_query,
                 self.nemesis_api_base,
                 self.command_reaction_feedback,
+                self.wca_bindings,
             )
             self.wca_version = WCAVersionService(self.nemesis_api_base)
             self.one_client = PersonalRecordAPIClient()

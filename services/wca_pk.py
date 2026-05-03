@@ -4,7 +4,12 @@ from typing import Any, Dict, Optional, Tuple
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from ..core.reaction_feedback import CommandReactionFeedback
-from ..core.wca_bindings import strip_first_command_token
+from ..core.wca_bindings import (
+    WCABindingStore,
+    extract_mentioned_qqs,
+    strip_first_command_token,
+    strip_mentions,
+)
 from ..core.wca_formatting import EVENT_ID_MAP, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -20,10 +25,16 @@ class PlayerRecord:
 class WCAPKService:
     """选手 PK"""
 
-    def __init__(self, query: WCAQuery, reaction_feedback: CommandReactionFeedback):
+    def __init__(
+        self,
+        query: WCAQuery,
+        reaction_feedback: CommandReactionFeedback,
+        bindings: WCABindingStore,
+    ):
         self.query = query
         self.lookup = WCAPersonLookupService(query)
         self.reaction_feedback = reaction_feedback
+        self.bindings = bindings
 
     async def _resolve_person(
         self, keyword: str
@@ -207,14 +218,29 @@ class WCAPKService:
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
-        parts = args.split(maxsplit=1) if args else []
-        if len(parts) < 2:
+        resolved_pair, binding_error = self._resolve_bound_pair(event)
+        if binding_error:
+            yield event.plain_result(binding_error).use_t2i(False)
+            return
+
+        if resolved_pair:
+            p1, p2 = resolved_pair
+        else:
+            args = strip_mentions(args)
+            parts = args.split(maxsplit=1) if args else []
+            if len(parts) < 2:
+                yield event.plain_result(
+                    "参数不足哦\n用法: /wcapk <选手1> <选手2>\n示例: /wcapk 2026LIHU01 2009ZEMD01"
+                ).use_t2i(False)
+                return
+            p1, p2 = parts[0].strip(), parts[1].strip()
+
+        if not p1 or not p2:
             yield event.plain_result(
                 "参数不足哦\n用法: /wcapk <选手1> <选手2>\n示例: /wcapk 2026LIHU01 2009ZEMD01"
             ).use_t2i(False)
             return
 
-        p1, p2 = parts[0].strip(), parts[1].strip()
         await self.reaction_feedback.send_processing_reaction(event)
         try:
             text, err = await self.compare(p1, p2)
@@ -225,3 +251,40 @@ class WCAPKService:
         except Exception as e:
             logger.error(f"WCA PK 异常: {e}")
             yield event.plain_result(f"对比出了一点小状况呢: {str(e)}").use_t2i(False)
+
+    def _resolve_bound_pair(
+        self,
+        event: AstrMessageEvent,
+    ) -> tuple[tuple[str, str] | None, str | None]:
+        mentioned_qqs = extract_mentioned_qqs(event)
+        if len(mentioned_qqs) >= 2:
+            pair = []
+            for qq_id in mentioned_qqs[:2]:
+                bound_wca_id = self.bindings.get(qq_id)
+                if not bound_wca_id:
+                    return None, f"这个 QQ（{qq_id}）还没有绑定 WCAID 呢"
+                pair.append(bound_wca_id)
+            return (pair[0], pair[1]), None
+
+        sender_qq = event.get_sender_id()
+        sender_text = str(sender_qq).strip() if sender_qq is not None else ""
+        non_sender_mentions = [
+            qq_id for qq_id in mentioned_qqs if qq_id != sender_text
+        ]
+        if len(non_sender_mentions) == 1:
+            sender_wca_id = self.bindings.get(sender_qq)
+            if not sender_wca_id:
+                return (
+                    None,
+                    "你还没有绑定 WCAID 呢\n"
+                    "用法: /wca绑定 <WCAID或姓名>\n"
+                    "示例: /wca绑定 2026LIHU01",
+                )
+
+            target_qq = non_sender_mentions[0]
+            target_wca_id = self.bindings.get(target_qq)
+            if not target_wca_id:
+                return None, f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢"
+            return (sender_wca_id, target_wca_id), None
+
+        return None, None

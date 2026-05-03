@@ -7,7 +7,7 @@ from astrbot.api.star import Context
 
 from .wca_pic_template import format_person_records_for_pic
 from ..core.pillow_cards import render_wca_person_card
-from ..core.wca_bindings import strip_first_command_token
+from ..core.wca_bindings import WCABindingStore, resolve_bound_wca_search_input
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
@@ -15,13 +15,30 @@ from ..core.wca_query import WCAQuery
 class WCAPicService:
     IMAGE_RENDER_TIMEOUT_SECONDS = 60
 
-    def __init__(self, query: WCAQuery, context: Context):
+    def __init__(self, query: WCAQuery, context: Context, bindings: WCABindingStore):
         self.query = query
         self.context = context
+        self.bindings = bindings
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
-        search_input = strip_first_command_token(event.message_str)
+        search_input, missing_binding, qq_id = resolve_bound_wca_search_input(
+            event, self.bindings
+        )
+
+        if missing_binding == "target":
+            yield event.plain_result(
+                f"这个 QQ（{qq_id}）还没有绑定 WCAID 呢"
+            ).use_t2i(False)
+            return
+
+        if missing_binding == "sender":
+            yield event.plain_result(
+                "你还没有绑定 WCAID 呢\n"
+                "用法: /wca绑定 <WCAID或姓名>\n"
+                "示例: /wca绑定 2026LIHU01"
+            ).use_t2i(False)
+            return
 
         if not search_input:
             yield event.plain_result(
