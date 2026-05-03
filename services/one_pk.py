@@ -2,8 +2,9 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
 from ..clients.one_api import EVENT_ID_TO_CODE, OneRecordHandler, PersonalRecordAPIClient, format_time_ms
+from ..core.one_bindings import OneBindingStore
 from ..core.reaction_feedback import CommandReactionFeedback
-from ..core.wca_bindings import strip_first_command_token
+from ..core.wca_bindings import extract_mentioned_qqs, strip_first_command_token, strip_mentions
 
 
 NUMBER_FORMAT_EVENT_IDS = {16}
@@ -17,10 +18,12 @@ class OnePKService:
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
         reaction_feedback: CommandReactionFeedback,
+        bindings: OneBindingStore,
     ):
         self.one_client = one_client
         self.one_handler = one_handler
         self.reaction_feedback = reaction_feedback
+        self.bindings = bindings
 
     async def _resolve_player(self, keyword: str):
         user_id, user_name, error = await self.one_handler.resolve_user(keyword)
@@ -185,14 +188,29 @@ class OnePKService:
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
-        parts = args.split(maxsplit=1) if args else []
-        if len(parts) < 2:
+        resolved_pair, binding_error = self._resolve_bound_pair(event)
+        if binding_error:
+            yield event.plain_result(binding_error).use_t2i(False)
+            return
+
+        if resolved_pair:
+            p1, p2 = resolved_pair
+        else:
+            args = strip_mentions(args)
+            parts = args.split(maxsplit=1) if args else []
+            if len(parts) < 2:
+                yield event.plain_result(
+                    "参数不足哦\n用法: /onepk <选手1> <选手2>\n示例: /onepk 1234 5678"
+                ).use_t2i(False)
+                return
+            p1, p2 = parts[0].strip(), parts[1].strip()
+
+        if not p1 or not p2:
             yield event.plain_result(
                 "参数不足哦\n用法: /onepk <选手1> <选手2>\n示例: /onepk 1234 5678"
             ).use_t2i(False)
             return
 
-        p1, p2 = parts[0].strip(), parts[1].strip()
         await self.reaction_feedback.send_processing_reaction(event)
         try:
             text, err = await self.compare(p1, p2)
@@ -203,3 +221,40 @@ class OnePKService:
         except Exception as e:
             logger.error(f"one PK 异常: {e}")
             yield event.plain_result(f"对比出了一点小状况呢: {str(e)}").use_t2i(False)
+
+    def _resolve_bound_pair(
+        self,
+        event: AstrMessageEvent,
+    ) -> tuple[tuple[str, str] | None, str | None]:
+        mentioned_qqs = extract_mentioned_qqs(event)
+        if len(mentioned_qqs) >= 2:
+            pair = []
+            for qq_id in mentioned_qqs[:2]:
+                bound_one_id = self.bindings.get(qq_id)
+                if bound_one_id is None:
+                    return None, f"这个 QQ（{qq_id}）还没有绑定 oneID 呢"
+                pair.append(str(bound_one_id))
+            return (pair[0], pair[1]), None
+
+        sender_qq = event.get_sender_id()
+        sender_text = str(sender_qq).strip() if sender_qq is not None else ""
+        non_sender_mentions = [
+            qq_id for qq_id in mentioned_qqs if qq_id != sender_text
+        ]
+        if len(non_sender_mentions) == 1:
+            sender_one_id = self.bindings.get(sender_qq)
+            if sender_one_id is None:
+                return (
+                    None,
+                    "你还没有绑定 oneID 呢\n"
+                    "用法: /one绑定 <oneID或用户名>\n"
+                    "示例: /one绑定 1234",
+                )
+
+            target_qq = non_sender_mentions[0]
+            target_one_id = self.bindings.get(target_qq)
+            if target_one_id is None:
+                return None, f"这个 QQ（{target_qq}）还没有绑定 oneID 呢"
+            return (str(sender_one_id), str(target_one_id)), None
+
+        return None, None

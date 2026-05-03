@@ -11,8 +11,9 @@ from ..clients.one_api import (
     PersonalRecordAPIClient,
     format_time_ms,
 )
+from ..core.one_bindings import OneBindingStore, resolve_bound_one_search_input
 from ..core.reaction_feedback import CommandReactionFeedback
-from ..core.wca_bindings import strip_first_command_token
+from ..core.wca_bindings import strip_first_command_token, strip_mentions
 from ..core.wca_formatting import EVENT_ID_MAP, EVENT_ORDER, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -87,12 +88,34 @@ class ResolvedCrossPlatformPlayer:
 
 
 class WCAOneService:
-    def __init__(self, client: PersonalRecordAPIClient, handler: OneRecordHandler):
+    def __init__(
+        self,
+        client: PersonalRecordAPIClient,
+        handler: OneRecordHandler,
+        bindings: OneBindingStore,
+    ):
         self.client = client
         self.handler = handler
+        self.bindings = bindings
 
     async def handle(self, event: AstrMessageEvent):
-        search_input = strip_first_command_token(event.message_str)
+        search_input, missing_binding, qq_id = resolve_bound_one_search_input(
+            event,
+            self.bindings,
+        )
+        if missing_binding == "target":
+            yield event.plain_result(
+                f"这个 QQ（{qq_id}）还没有绑定 oneID 呢"
+            ).use_t2i(False)
+            return
+        if missing_binding == "sender":
+            yield event.plain_result(
+                "你还没有绑定 oneID 呢\n"
+                "用法: /one绑定 <oneID或用户名>\n"
+                "示例: /one绑定 1234"
+            ).use_t2i(False)
+            return
+
         if not search_input:
             yield event.plain_result(
                 "请提供姓名或 oneID 哦\n用法：/one [姓名或ID]\n示例：/one 李华"
@@ -161,6 +184,57 @@ class WCAOneService:
         except Exception as e:
             logger.error(f"one 查询异常: {e}")
             yield event.plain_result(f"哎呀，出错了呢：{str(e)}").use_t2i(False)
+
+
+class OneBindCommandService:
+    def __init__(
+        self,
+        client: PersonalRecordAPIClient,
+        handler: OneRecordHandler,
+        bindings: OneBindingStore,
+    ):
+        self.client = client
+        self.handler = handler
+        self.bindings = bindings
+
+    async def handle(self, event: AstrMessageEvent):
+        qq_id = event.get_sender_id()
+        if not qq_id:
+            yield event.plain_result(
+                "哎呀，拿不到你的 QQ 号呢，要在 QQ 里用才行哦~"
+            ).use_t2i(False)
+            return
+
+        search_input = strip_first_command_token(event.message_str)
+        search_input = strip_mentions(search_input)
+        if not search_input:
+            yield event.plain_result(
+                "请输入要绑定的 oneID 或用户名哦\n"
+                "用法: /one绑定 <oneID或用户名>\n"
+                "示例: /one绑定 1234"
+            ).use_t2i(False)
+            return
+
+        try:
+            one_id, user_name, error_msg = await self.handler.resolve_user(search_input)
+            if error_msg:
+                yield event.plain_result(error_msg).use_t2i(False)
+                return
+            if one_id is None:
+                yield event.plain_result("哎呀，没拿到 one 用户 ID 呢").use_t2i(False)
+                return
+
+            if not user_name:
+                records_resp = await self.client.get_personal_records(one_id)
+                user_name = extract_one_user_name(records_resp)
+
+            self.bindings.set(str(qq_id), one_id)
+            yield event.plain_result(
+                f"绑定成功啦~\n你的 QQ：{qq_id}\noneID：{one_id}\n用户名：{user_name or '未知'}"
+            ).use_t2i(False)
+        except Exception as e:
+            logger.error(f"one 绑定异常: {e}")
+            yield event.plain_result(f"绑定时出了点小状况呢: {str(e)}").use_t2i(False)
 
 
 class WCAPRService:
@@ -619,6 +693,19 @@ def build_one_best_maps(resp: dict[str, Any] | None):
             )
 
     return single_map, avg_map
+
+
+def extract_one_user_name(resp: dict[str, Any] | None) -> str | None:
+    rank_data = (
+        resp.get("data", {}).get("rank", [])
+        if resp and resp.get("code") == 10000
+        else []
+    )
+    for record in rank_data:
+        user_name = str(record.get("u_name") or "").strip()
+        if user_name:
+            return user_name
+    return None
 
 
 @lru_cache(maxsize=1)

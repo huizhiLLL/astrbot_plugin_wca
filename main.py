@@ -3,6 +3,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 from .clients.one_api import OneRecordHandler, PersonalRecordAPIClient
+from .core.one_bindings import OneBindingStore
 from .core.reaction_feedback import CommandReactionFeedback
 from .core.wca_bindings import WCABindingStore
 from .core.wca_query import (
@@ -10,7 +11,12 @@ from .core.wca_query import (
     WCACommandService,
     WCABindCommandService,
 )
-from .services.wca_cross_platform import WCAOneService, WCAPRPKService, WCAPRService
+from .services.wca_cross_platform import (
+    OneBindCommandService,
+    WCAOneService,
+    WCAPRPKService,
+    WCAPRService,
+)
 from .services.wca_help import WCACubeHelpService
 from .services.wca_nemesis import WCANemesisService, WCAVersionService
 from .services.wca_pic import WCAPicService
@@ -20,7 +26,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.7")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.8")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -29,8 +35,10 @@ class WCAPlugin(Star):
         self.config = config
         self.wca_query: WCAQuery | None = None
         self.wca_bindings = WCABindingStore()
+        self.one_bindings = OneBindingStore()
         self.wca_command_service: WCACommandService | None = None
         self.wca_bind_command: WCABindCommandService | None = None
+        self.one_bind_command: OneBindCommandService | None = None
         self.wca_pic: WCAPicService | None = None
         self.wca_pk: WCAPKService | None = None
         self.one_pk: OnePKService | None = None
@@ -83,6 +91,7 @@ class WCAPlugin(Star):
                 self.one_client,
                 self.one_handler,
                 self.command_reaction_feedback,
+                self.one_bindings,
             )
             self.pktwo_service = PKTwoService(
                 self.wca_query,
@@ -91,7 +100,16 @@ class WCAPlugin(Star):
                 self.command_reaction_feedback,
             )
             self.cube_help_service = WCACubeHelpService(self.context)
-            self.one_service = WCAOneService(self.one_client, self.one_handler)
+            self.one_service = WCAOneService(
+                self.one_client,
+                self.one_handler,
+                self.one_bindings,
+            )
+            self.one_bind_command = OneBindCommandService(
+                self.one_client,
+                self.one_handler,
+                self.one_bindings,
+            )
             self.pr_service = WCAPRService(
                 self.wca_query,
                 self.one_client,
@@ -166,6 +184,17 @@ class WCAPlugin(Star):
             ).use_t2i(False)
             return
         async for result in self.one_service.handle(event):
+            yield result
+
+    @filter.command("one绑定", alias={"ONE绑定"})
+    async def one_bind(self, event: AstrMessageEvent):
+        """绑定 QQ 与 oneID"""
+        if not self.one_bind_command:
+            yield event.plain_result(
+                "哎呀，初始化 one 绑定出错啦，请稍后再试哦！"
+            ).use_t2i(False)
+            return
+        async for result in self.one_bind_command.handle(event):
             yield result
 
     @filter.command("pr", alias={"PR"})
