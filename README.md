@@ -2,7 +2,7 @@
 
 WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，不拉取数据库，实时查询 WCA 官方数据与 one 平台数据。
 
-**当前版本：v1.1.8**
+**当前版本：v1.1.9**
 
 ## 功能
 
@@ -28,7 +28,7 @@ WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，不拉
 | `/wcapk` | 比较两位选手的 wca 成绩 | `/wcapk @某人`、`/wcapk @甲 @乙`、`/wcapk 张伟 李华` |
 | `/onepk` | 比较两位选手的 one 成绩 | `/onepk @某人`、`/onepk @甲 @乙`、`/onepk 张伟 李华` |
 | `/pktwo` | 比较同一选手在 WCA 与 one 两个平台的成绩 | `/pktwo 2026ZHANG01 1234` |
-| `/pr` | 查询双平台 PR；同名可手动指定 WCAID/oneID | `/pr 2026ZHANG01 1234` |
+| `/pr` | 查询双平台 PR；同名可手动指定 WCAID/oneID | `/pr`、`/pr @某人`、`/pr 2026ZHANG01 1234` |
 | `/prpk` | 比较两位选手的双平台 PR 成绩；同名可手动指定双方 WCAID/oneID | `/prpk 李华 张伟` |
 | `/wca绑定` | 将当前 QQ 和 WCAID 绑定 | `/wca绑定 2026ZHANG01` |
 | `/one绑定` | 将当前 QQ 和 oneID 绑定 | `/one绑定 1234` |
@@ -58,11 +58,17 @@ WCA 与 one 成绩查询插件。采用全 API 架构，轻量化设计，不拉
 - 发送 `/wcapk @某人` 时，会自动使用“自己 vs 对方”；发送 `/wcapk @甲 @乙` 时，会直接比较这两个选手
 - 发送 `/one @某人` 时，如果对方已绑定 oneID，也可以直接查询对方 one 成绩
 - 发送 `/onepk @某人` 时，会自动使用“自己 vs 对方”；发送 `/onepk @甲 @乙` 时，会直接比较这两个 one 绑定用户
+- 发送 `/pr` 时会自动使用自己的 WCAID 和 oneID 绑定；发送 `/pr @某人` 时会使用对方两边的绑定
 - 绑定信息保存在插件数据目录下的 `wca_bindings.json` 和 `one_bindings.json`
 
 ---
 
 ## 更新日志
+
+### v1.1.9
+
+- `/pr` 支持无参数自查，自动使用当前 QQ 的 WCAID 与 oneID 绑定
+- `/pr @某人` 支持查询被艾特用户的双平台 PR，要求对方同时绑定 WCAID 与 oneID
 
 ### v1.1.8
 

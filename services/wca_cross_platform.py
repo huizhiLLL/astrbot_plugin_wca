@@ -13,7 +13,12 @@ from ..clients.one_api import (
 )
 from ..core.one_bindings import OneBindingStore, resolve_bound_one_search_input
 from ..core.reaction_feedback import CommandReactionFeedback
-from ..core.wca_bindings import strip_first_command_token, strip_mentions
+from ..core.wca_bindings import (
+    WCABindingStore,
+    extract_first_mentioned_qq,
+    strip_first_command_token,
+    strip_mentions,
+)
 from ..core.wca_formatting import EVENT_ID_MAP, EVENT_ORDER, format_wca_time
 from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
@@ -244,27 +249,39 @@ class WCAPRService:
         one_client: PersonalRecordAPIClient,
         one_handler: OneRecordHandler,
         reaction_feedback: CommandReactionFeedback,
+        wca_bindings: WCABindingStore,
+        one_bindings: OneBindingStore,
     ):
         self.query = query
         self.one_client = one_client
         self.one_handler = one_handler
         self.lookup = WCAPersonLookupService(query)
         self.reaction_feedback = reaction_feedback
+        self.wca_bindings = wca_bindings
+        self.one_bindings = one_bindings
 
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
-        parts = args.split(maxsplit=1) if args else []
-        if not parts:
-            yield event.plain_result(
-                "哎呀，请提供参数哦~\n"
-                "用法：/pr [姓名]\n"
-                "如果有同名选手，请用：/pr [WCAID] [oneID]\n"
-                "示例：/pr 2026LIHUA01 1234"
-            ).use_t2i(False)
+        bound_inputs, binding_error = self._resolve_bound_pr_inputs(event, args)
+        if binding_error:
+            yield event.plain_result(binding_error).use_t2i(False)
             return
 
-        search_input = parts[0].strip()
-        one_id_input = parts[1].strip() if len(parts) >= 2 else None
+        if bound_inputs:
+            search_input, one_id_input = bound_inputs
+        else:
+            parts = args.split(maxsplit=1) if args else []
+            if not parts:
+                yield event.plain_result(
+                    "哎呀，请提供参数哦~\n"
+                    "用法：/pr [姓名]\n"
+                    "如果有同名选手，请用：/pr [WCAID] [oneID]\n"
+                    "示例：/pr 2026LIHUA01 1234"
+                ).use_t2i(False)
+                return
+            search_input = parts[0].strip()
+            one_id_input = parts[1].strip() if len(parts) >= 2 else None
+
         await self.reaction_feedback.send_processing_reaction(event)
         player = await self._resolve_player(
             search_input,
@@ -369,6 +386,44 @@ class WCAPRService:
         return ResolvedCrossPlatformPlayer(
             wca_person, one_user_id, one_user_name, wca_error, one_error
         )
+
+    def _resolve_bound_pr_inputs(
+        self,
+        event: AstrMessageEvent,
+        args: str,
+    ) -> tuple[tuple[str, str] | None, str | None]:
+        explicit_text = strip_mentions(args)
+        target_qq = extract_first_mentioned_qq(event)
+        if target_qq and not explicit_text:
+            wca_id = self.wca_bindings.get(target_qq)
+            one_id = self.one_bindings.get(target_qq)
+            if not wca_id:
+                return None, f"这个 QQ（{target_qq}）还没有绑定 WCAID 呢"
+            if one_id is None:
+                return None, f"这个 QQ（{target_qq}）还没有绑定 oneID 呢"
+            return (wca_id, str(one_id)), None
+
+        if explicit_text:
+            return None, None
+
+        sender_qq = event.get_sender_id()
+        wca_id = self.wca_bindings.get(sender_qq)
+        one_id = self.one_bindings.get(sender_qq)
+        if not wca_id:
+            return (
+                None,
+                "你还没有绑定 WCAID 呢\n"
+                "用法: /wca绑定 <WCAID或姓名>\n"
+                "示例: /wca绑定 2026LIHU01",
+            )
+        if one_id is None:
+            return (
+                None,
+                "你还没有绑定 oneID 呢\n"
+                "用法: /one绑定 <oneID或用户名>\n"
+                "示例: /one绑定 1234",
+            )
+        return (wca_id, str(one_id)), None
 
     def _build_merged_pr_lines(
         self, wca_records: dict[str, Any], one_records_resp: dict[str, Any]
