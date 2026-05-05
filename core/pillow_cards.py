@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
@@ -11,6 +12,46 @@ from ..services.wca_pic_template import build_person_card_template_data
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
 DEFAULT_FONT_PATH = FONTS_DIR / "NotoSansSC-Regular.ttf"
+SYSTEM_FONT_DIRS = [
+    Path("C:/Windows/Fonts"),
+    Path("/usr/share/fonts"),
+    Path("/usr/local/share/fonts"),
+]
+FALLBACK_FONT_FILES = {
+    "latin": [
+        "arial.ttf",
+        "tahoma.ttf",
+        "DejaVuSans.ttf",
+        "LiberationSans-Regular.ttf",
+        "NotoSans-Regular.ttf",
+    ],
+    "thai": [
+        "Loma.otf",
+        "tahoma.ttf",
+        "leelawad.ttf",
+        "FreeSans.ttf",
+        "NotoSansThai-Regular.ttf",
+        "NotoSansThaiUI-Regular.ttf",
+        "Garuda.ttf",
+    ],
+    "korean": [
+        "wqy-zenhei.ttc",
+        "malgun.ttf",
+        "NotoSansKR-Regular.otf",
+        "NotoSansCJK-Regular.ttc",
+        "NotoSansCJKkr-Regular.ttc",
+        "NotoSansCJKkr-Regular.otf",
+    ],
+    "japanese": [
+        "wqy-zenhei.ttc",
+        "YuGothR.ttc",
+        "meiryo.ttc",
+        "NotoSansJP-Regular.otf",
+        "NotoSansCJK-Regular.ttc",
+        "NotoSansCJKjp-Regular.ttc",
+        "NotoSansCJKjp-Regular.otf",
+    ],
+}
 
 CARD_BG = "#F7F8FC"
 PANEL_BG = "#FFFFFF"
@@ -39,19 +80,168 @@ PERSON_ROW_HEIGHT = 56 * SCALE
 class FontBook:
     def __init__(self, font_path: Path | None = None):
         self.font_path = font_path or DEFAULT_FONT_PATH
-        self.title = self._load(40 * SCALE)
-        self.subtitle = self._load(22 * SCALE)
-        self.h3 = self._load(24 * SCALE)
-        self.body = self._load(20 * SCALE)
-        self.body_small = self._load(18 * SCALE)
-        self.mono = self._load(18 * SCALE)
-        self.metric = self._load(30 * SCALE)
+        self.title = self._stack(40 * SCALE)
+        self.subtitle = self._stack(22 * SCALE)
+        self.h3 = self._stack(24 * SCALE)
+        self.body = self._stack(20 * SCALE)
+        self.body_small = self._stack(18 * SCALE)
+        self.mono = self._stack(18 * SCALE)
+        self.metric = self._stack(30 * SCALE)
 
     def _load(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         try:
             return ImageFont.truetype(str(self.font_path), size=size)
         except Exception:
             return ImageFont.load_default()
+
+    def _stack(self, size: int) -> "FontStack":
+        return FontStack(
+            primary=self._load(size),
+            latin=_load_first_available_font(FALLBACK_FONT_FILES["latin"], size),
+            thai=_load_first_available_font(FALLBACK_FONT_FILES["thai"], size),
+            korean=_load_first_available_font(FALLBACK_FONT_FILES["korean"], size),
+            japanese=_load_first_available_font(FALLBACK_FONT_FILES["japanese"], size),
+        )
+
+
+class FontStack:
+    def __init__(
+        self,
+        *,
+        primary: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+        latin: ImageFont.FreeTypeFont | ImageFont.ImageFont | None,
+        thai: ImageFont.FreeTypeFont | ImageFont.ImageFont | None,
+        korean: ImageFont.FreeTypeFont | ImageFont.ImageFont | None,
+        japanese: ImageFont.FreeTypeFont | ImageFont.ImageFont | None,
+    ):
+        self.primary = primary
+        self.latin = latin or primary
+        self.thai = thai or self.latin
+        self.korean = korean or primary
+        self.japanese = japanese or primary
+
+    def font_for(self, char: str) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        code = ord(char)
+        if 0x0E00 <= code <= 0x0E7F:
+            return self.thai
+        if (
+            0x1100 <= code <= 0x11FF
+            or 0x3130 <= code <= 0x318F
+            or 0xAC00 <= code <= 0xD7AF
+        ):
+            return self.korean
+        if 0x3040 <= code <= 0x30FF:
+            return self.japanese
+        if _is_latin_extended(char):
+            return self.latin
+        return self.primary
+
+
+def _load_first_available_font(
+    filenames: list[str],
+    size: int,
+) -> ImageFont.FreeTypeFont | ImageFont.ImageFont | None:
+    for filename in filenames:
+        font_path = _find_system_font(filename)
+        if not font_path:
+            continue
+        try:
+            return ImageFont.truetype(str(font_path), size=size)
+        except Exception:
+            continue
+    return None
+
+
+def _find_system_font(filename: str) -> Path | None:
+    target = filename.lower()
+    for base_dir in SYSTEM_FONT_DIRS:
+        if not base_dir.exists():
+            continue
+        direct = base_dir / filename
+        if direct.exists():
+            return direct
+        try:
+            for path in base_dir.rglob("*"):
+                if path.is_file() and path.name.lower() == target:
+                    return path
+        except OSError:
+            continue
+    return None
+
+
+def _is_latin_extended(char: str) -> bool:
+    code = ord(char)
+    if code <= 0x024F:
+        return True
+    try:
+        return "LATIN" in unicodedata.name(char)
+    except ValueError:
+        return False
+
+
+def _text_bbox(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: FontStack | ImageFont.ImageFont,
+) -> tuple[int, int, int, int]:
+    text = str(text or "")
+    if isinstance(font, FontStack):
+        width = 0
+        top = 0
+        bottom = 0
+        for run_text, run_font in _iter_font_runs(text, font):
+            bbox = draw.textbbox((0, 0), run_text, font=run_font)
+            width += bbox[2] - bbox[0]
+            top = min(top, bbox[1])
+            bottom = max(bottom, bbox[3])
+        return (0, top, width, bottom)
+    return draw.textbbox((0, 0), text, font=font)
+
+
+def _text_width(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: FontStack | ImageFont.ImageFont,
+) -> int:
+    bbox = _text_bbox(draw, text, font)
+    return bbox[2] - bbox[0]
+
+
+def _draw_text(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    text: str,
+    font: FontStack | ImageFont.ImageFont,
+    fill: str,
+) -> None:
+    text = str(text or "")
+    if not isinstance(font, FontStack):
+        draw.text(xy, text, font=font, fill=fill)
+        return
+
+    x, y = xy
+    for run_text, run_font in _iter_font_runs(text, font):
+        draw.text((x, y), run_text, font=run_font, fill=fill)
+        x += _text_width(draw, run_text, run_font)
+
+
+def _iter_font_runs(
+    text: str,
+    font_stack: FontStack,
+) -> Iterable[tuple[str, ImageFont.FreeTypeFont | ImageFont.ImageFont]]:
+    current_text = ""
+    current_font: ImageFont.FreeTypeFont | ImageFont.ImageFont | None = None
+    for char in text:
+        char_font = font_stack.font_for(char)
+        if current_font is not None and char_font is not current_font:
+            yield current_text, current_font
+            current_text = char
+            current_font = char_font
+        else:
+            current_text += char
+            current_font = char_font
+    if current_text and current_font is not None:
+        yield current_text, current_font
 
 
 def render_cube_help_card(data: dict[str, object]) -> bytes:
@@ -66,8 +256,8 @@ def render_cube_help_card(data: dict[str, object]) -> bytes:
     title = str(data.get("title", "Cube 命令帮助"))
     subtitle = str(data.get("subtitle", ""))
     title_y = 56 * SCALE
-    draw.text((PADDING_X, title_y), title, font=fonts.title, fill=TITLE_COLOR)
-    draw.text((PADDING_X, title_y + 56 * SCALE), subtitle, font=fonts.subtitle, fill=MUTED_TEXT)
+    _draw_text(draw, (PADDING_X, title_y), title, fonts.title, TITLE_COLOR)
+    _draw_text(draw, (PADDING_X, title_y + 56 * SCALE), subtitle, fonts.subtitle, MUTED_TEXT)
 
     top = 148 * SCALE
     content_width = CANVAS_WIDTH - PADDING_X * 2
@@ -88,7 +278,7 @@ def render_cube_help_card(data: dict[str, object]) -> bytes:
         desc = str(command.get("desc", ""))
         example = str(command.get("example", ""))
 
-        draw.text((row_box[0] + 22 * SCALE, row_box[1] + 18 * SCALE), name, font=fonts.h3, fill=ACCENT)
+        _draw_text(draw, (row_box[0] + 22 * SCALE, row_box[1] + 18 * SCALE), name, fonts.h3, ACCENT)
         desc_lines = _wrap_text(draw, desc, fonts.body, max_width=420 * SCALE, max_lines=2)
         example_lines = _wrap_text(draw, example, fonts.body_small, max_width=520 * SCALE, max_lines=2)
 
@@ -141,9 +331,9 @@ def render_wca_person_card(
     content_w = wrap_right - wrap_left
 
     name = str(data.get("name", "未知"))
-    name_bbox = draw.textbbox((0, 0), name, font=fonts.title)
+    name_bbox = _text_bbox(draw, name, fonts.title)
     name_w = name_bbox[2] - name_bbox[0]
-    draw.text(((CANVAS_WIDTH - name_w) / 2, wrap_top), name, font=fonts.title, fill="#222222")
+    _draw_text(draw, ((CANVAS_WIDTH - name_w) / 2, wrap_top), name, fonts.title, "#222222")
 
     meta_top = wrap_top + 90 * SCALE
     meta_cols = _columns_from_ratios(
@@ -183,9 +373,9 @@ def render_wca_person_card(
 
     section_title = "当前个人记录"
     section_top = meta_top + meta_header_h + meta_row_h + section_gap
-    sec_bbox = draw.textbbox((0, 0), section_title, font=fonts.h3)
+    sec_bbox = _text_bbox(draw, section_title, fonts.h3)
     sec_w = sec_bbox[2] - sec_bbox[0]
-    draw.text(((CANVAS_WIDTH - sec_w) / 2, section_top), section_title, font=fonts.h3, fill="#222222")
+    _draw_text(draw, ((CANVAS_WIDTH - sec_w) / 2, section_top), section_title, fonts.h3, "#222222")
 
     records_top = section_top + 44 * SCALE
     record_cols = _columns_from_ratios(
@@ -256,9 +446,9 @@ def render_wca_nemesis_list_card(
     if truncated:
         summary += f" · 图片最多展示前 {display_limit} 人"
 
-    draw.text((PADDING_X, 58 * SCALE), title, font=fonts.title, fill=TITLE_COLOR)
-    draw.text((PADDING_X, 116 * SCALE), subtitle, font=fonts.subtitle, fill=MUTED_TEXT)
-    draw.text((PADDING_X, 154 * SCALE), summary, font=fonts.body, fill=TEXT_COLOR)
+    _draw_text(draw, (PADDING_X, 58 * SCALE), title, fonts.title, TITLE_COLOR)
+    _draw_text(draw, (PADDING_X, 116 * SCALE), subtitle, fonts.subtitle, MUTED_TEXT)
+    _draw_text(draw, (PADDING_X, 154 * SCALE), summary, fonts.body, TEXT_COLOR)
 
     table_left = PADDING_X
     table_top = top_area
@@ -517,13 +707,13 @@ def _draw_cell_text(
     draw: ImageDraw.ImageDraw,
     text: str,
     box: tuple[int, int, int, int],
-    font: ImageFont.ImageFont,
+    font: FontStack | ImageFont.ImageFont,
     fill: str,
     align: str,
     pad_x: int = 12,
 ) -> None:
     x1, y1, x2, y2 = box
-    bbox = draw.textbbox((0, 0), text, font=font)
+    bbox = _text_bbox(draw, text, font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
     y = y1 + (y2 - y1 - text_h) / 2 - bbox[1]
@@ -533,27 +723,25 @@ def _draw_cell_text(
         x = x2 - pad_x - text_w
     else:
         x = x1 + (x2 - x1 - text_w) / 2
-    draw.text((x, y), text, font=font, fill=fill)
+    _draw_text(draw, (x, y), text, font, fill)
 
 
 def _fit_text_to_width(
     draw: ImageDraw.ImageDraw,
     text: str,
-    font: ImageFont.ImageFont,
+    font: FontStack | ImageFont.ImageFont,
     max_width: int,
 ) -> str:
     text = str(text or "")
     if not text:
         return ""
-    bbox = draw.textbbox((0, 0), text, font=font)
-    if bbox[2] - bbox[0] <= max_width:
+    if _text_width(draw, text, font) <= max_width:
         return text
     ellipsis = "…"
     current = ""
     for char in text:
         candidate = current + char + ellipsis
-        bbox = draw.textbbox((0, 0), candidate, font=font)
-        if bbox[2] - bbox[0] > max_width:
+        if _text_width(draw, candidate, font) > max_width:
             return current + ellipsis if current else ellipsis
         current += char
     return current
@@ -572,7 +760,7 @@ def _draw_rounded_panel(
 def _wrap_text(
     draw: ImageDraw.ImageDraw,
     text: str,
-    font: ImageFont.ImageFont,
+    font: FontStack | ImageFont.ImageFont,
     max_width: int,
     max_lines: int | None = None,
 ) -> list[str]:
@@ -585,8 +773,7 @@ def _wrap_text(
         current = ""
         for char in raw_line:
             candidate = current + char
-            bbox = draw.textbbox((0, 0), candidate, font=font)
-            if current and bbox[2] - bbox[0] > max_width:
+            if current and _text_width(draw, candidate, font) > max_width:
                 lines.append(current)
                 current = char
             else:
@@ -604,15 +791,15 @@ def _draw_lines(
     draw: ImageDraw.ImageDraw,
     lines: Iterable[str],
     origin: tuple[int, int],
-    font: ImageFont.ImageFont,
+    font: FontStack | ImageFont.ImageFont,
     fill: str,
     gap: int,
 ) -> None:
     x, y = origin
-    bbox = draw.textbbox((0, 0), "测试Ag", font=font)
+    bbox = _text_bbox(draw, "测试Ag", font)
     line_height = bbox[3] - bbox[1] + gap
     for index, line in enumerate(lines):
-        draw.text((x, y + index * line_height), line, font=font, fill=fill)
+        _draw_text(draw, (x, y + index * line_height), line, font, fill)
 
 
 def _image_to_png_bytes(image: Image.Image) -> bytes:
