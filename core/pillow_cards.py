@@ -247,13 +247,10 @@ def render_wca_nemesis_list_card(
     world_count = int(nemesis_data.get("world_count", 0) or 0)
     continent_count = int(nemesis_data.get("continent_count", 0) or 0)
     country_count = int(nemesis_data.get("country_count", 0) or 0)
-    continent = str(nemesis_data.get("continent", "")).strip()
-    continent_label = continent or "洲内"
-
     title = f"{person_name} 的宿敌列表"
     subtitle = f"{person_id}{country_text}"
     summary = (
-        f"世界 {world_count} 人 · {continent_label} {continent_count} 人 · "
+        f"世界 {world_count} 人 · 洲 {continent_count} 人 · "
         f"地区 {country_count} 人"
     )
     if truncated:
