@@ -83,7 +83,7 @@ class WCANemesisApiClient:
 
 
 class WCANemesisService:
-    IMAGE_LIST_LIMIT = 100
+    IMAGE_LIST_LIMIT = 50
 
     def __init__(
         self,
