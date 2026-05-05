@@ -26,7 +26,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.11")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.12")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -244,6 +244,20 @@ class WCAPlugin(Star):
             ).use_t2i(False)
             return
         async for result in self.wca_nemesis.handle(event):
+            yield result
+
+    @filter.command("宿敌ls", alias={"宿敌LS"})
+    async def wca_nemesis_list_command(self, event: AstrMessageEvent):
+        """宿敌列表查询：\n
+        /宿敌ls [WCAID/姓名]\n
+        /宿敌ls 2026LIHU01 /宿敌ls 李华
+        """
+        if not self.wca_nemesis:
+            yield event.plain_result(
+                "哎呀，初始化 WCA 查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
+            return
+        async for result in self.wca_nemesis.handle_list(event):
             yield result
 
     @filter.command("版本")

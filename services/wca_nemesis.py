@@ -1,7 +1,9 @@
 import aiohttp
+import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
+from ..core.pillow_cards import render_wca_nemesis_list_card
 from ..core.reaction_feedback import CommandReactionFeedback
 from ..core.wca_bindings import WCABindingStore, resolve_bound_wca_search_input
 from ..core.wca_person_lookup import WCAPersonLookupService
@@ -12,11 +14,20 @@ class WCANemesisApiClient:
     def __init__(self, api_base: str):
         self.api_base = api_base.rstrip("/")
 
-    async def get_nemesis(self, person_id: str) -> dict | None:
+    async def get_nemesis(
+        self,
+        person_id: str,
+        *,
+        list_size: int | None = None,
+    ) -> dict | None:
+        payload = {"person_id": person_id}
+        if list_size is not None:
+            payload["NEMESIS_LIST_SIZE"] = list_size
+
         return await self._request_json(
             method="post",
             path="/nemesis",
-            json_payload={"person_id": person_id},
+            json_payload=payload,
             log_name="宿敌接口",
         )
 
@@ -72,6 +83,8 @@ class WCANemesisApiClient:
 
 
 class WCANemesisService:
+    IMAGE_LIST_LIMIT = 100
+
     def __init__(
         self,
         query: WCAQuery,
@@ -86,6 +99,14 @@ class WCANemesisService:
         self.bindings = bindings
 
     async def handle(self, event: AstrMessageEvent):
+        async for result in self._handle(event, image_list=False):
+            yield result
+
+    async def handle_list(self, event: AstrMessageEvent):
+        async for result in self._handle(event, image_list=True):
+            yield result
+
+    async def _handle(self, event: AstrMessageEvent, *, image_list: bool):
         search_input, missing_binding, qq_id = resolve_bound_wca_search_input(
             event, self.bindings
         )
@@ -104,10 +125,11 @@ class WCANemesisService:
             return
 
         if not search_input:
+            command = "/宿敌ls" if image_list else "/宿敌"
             yield event.plain_result(
                 "请提供 WCAID 或姓名哦\n"
-                "用法: /宿敌 [WCAID/姓名]\n"
-                "示例: /宿敌 2026LIHU01\n"
+                f"用法: {command} [WCAID/姓名]\n"
+                f"示例: {command} 2026LIHU01\n"
             ).use_t2i(False)
             return
 
@@ -122,10 +144,11 @@ class WCANemesisService:
                 return
 
             if result.status == "ambiguous":
+                command = "/宿敌ls <WCAID>" if image_list else "/宿敌 <WCAID>"
                 yield event.plain_result(
                     self.lookup.format_multiple_persons_prompt(
                         result.persons or [],
-                        "/宿敌 <WCAID>",
+                        command,
                     )
                 ).use_t2i(False)
                 return
@@ -139,9 +162,22 @@ class WCANemesisService:
                 ).use_t2i(False)
                 return
 
-            nemesis_data = await self.client.get_nemesis(person_id)
+            nemesis_data = await self.client.get_nemesis(
+                person_id,
+                list_size=None if image_list else 10,
+            )
             if not nemesis_data:
                 yield event.plain_result("查询宿敌失败了，请稍后重试哦").use_t2i(False)
+                return
+
+            if image_list:
+                image_bytes = render_wca_nemesis_list_card(
+                    person_info=pinfo,
+                    person_id=person_id,
+                    nemesis_data=nemesis_data,
+                    display_limit=self.IMAGE_LIST_LIMIT,
+                )
+                await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
                 return
 
             text = self._format_nemesis_result(

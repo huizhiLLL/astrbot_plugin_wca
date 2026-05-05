@@ -216,6 +216,80 @@ def render_wca_person_card(
     return _image_to_png_bytes(image)
 
 
+def render_wca_nemesis_list_card(
+    *,
+    person_info: dict,
+    person_id: str,
+    nemesis_data: dict,
+    display_limit: int = 100,
+) -> bytes:
+    fonts = FontBook()
+    rows, truncated = _build_nemesis_rows(nemesis_data, display_limit)
+
+    row_height = 58 * SCALE
+    header_height = 58 * SCALE
+    top_area = 220 * SCALE
+    bottom_padding = 58 * SCALE
+    rows_count = max(1, len(rows))
+    canvas_height = top_area + header_height + rows_count * row_height + bottom_padding
+    image = Image.new("RGB", (CANVAS_WIDTH, canvas_height), CARD_BG)
+    draw = ImageDraw.Draw(image)
+
+    _draw_rounded_panel(
+        draw,
+        (32 * SCALE, 28 * SCALE, CANVAS_WIDTH - 32 * SCALE, canvas_height - 28 * SCALE),
+        radius=28 * SCALE,
+    )
+
+    person_name = str(person_info.get("name", "未知选手")).strip() or "未知选手"
+    country = str(person_info.get("country_iso2", "") or person_info.get("country_id", "")).strip()
+    country_text = f" · {country}" if country else ""
+    world_count = int(nemesis_data.get("world_count", 0) or 0)
+    continent_count = int(nemesis_data.get("continent_count", 0) or 0)
+    country_count = int(nemesis_data.get("country_count", 0) or 0)
+    continent = str(nemesis_data.get("continent", "")).strip()
+    continent_label = continent or "洲内"
+
+    title = f"{person_name} 的宿敌列表"
+    subtitle = f"{person_id}{country_text}"
+    summary = (
+        f"世界 {world_count} 人 · {continent_label} {continent_count} 人 · "
+        f"地区 {country_count} 人"
+    )
+    if truncated:
+        summary += f" · 图片最多展示前 {display_limit} 人"
+
+    draw.text((PADDING_X, 58 * SCALE), title, font=fonts.title, fill=TITLE_COLOR)
+    draw.text((PADDING_X, 116 * SCALE), subtitle, font=fonts.subtitle, fill=MUTED_TEXT)
+    draw.text((PADDING_X, 154 * SCALE), summary, font=fonts.body, fill=TEXT_COLOR)
+
+    table_left = PADDING_X
+    table_top = top_area
+    table_width = CANVAS_WIDTH - PADDING_X * 2
+    columns = _columns_from_ratios(
+        [
+            ("#", 0.45),
+            ("范围", 1.0),
+            ("选手", 2.8),
+            ("WCA ID", 1.45),
+            ("地区", 0.9),
+        ],
+        table_width,
+    )
+    _draw_nemesis_table(
+        draw,
+        table_top,
+        table_left,
+        columns,
+        rows,
+        header_height,
+        row_height,
+        fonts,
+    )
+
+    return _image_to_png_bytes(image)
+
+
 def _columns_from_ratios(
     ratios: list[tuple[str, float]],
     target_width: int,
@@ -330,6 +404,118 @@ def _draw_records_table(
         current_top += row_height
 
 
+def _draw_nemesis_table(
+    draw: ImageDraw.ImageDraw,
+    top: int,
+    left: int,
+    widths: list[tuple[str, int]],
+    rows: list[dict[str, str]],
+    header_height: int,
+    row_height: int,
+    fonts: FontBook,
+) -> None:
+    x = left
+    total_width = sum(width for _, width in widths)
+    draw.rounded_rectangle(
+        (left, top, left + total_width, top + header_height),
+        radius=16 * SCALE,
+        fill=TABLE_HEADER_BG,
+    )
+    for index, (title, width) in enumerate(widths):
+        _draw_cell_text(
+            draw,
+            title,
+            (x, top, x + width, top + header_height),
+            fonts.body_small,
+            TITLE_COLOR,
+            "left" if index == 2 else "center",
+            pad_x=18 * SCALE,
+        )
+        x += width
+
+    if not rows:
+        _draw_cell_text(
+            draw,
+            "暂无宿敌",
+            (left, top + header_height, left + total_width, top + header_height + row_height),
+            fonts.body,
+            MUTED_TEXT,
+            "center",
+        )
+        return
+
+    current_top = top + header_height
+    for index, row in enumerate(rows):
+        fill = TABLE_ALT_BG if index % 2 == 0 else PANEL_BG
+        draw.rectangle((left, current_top, left + total_width, current_top + row_height), fill=fill)
+        values = [
+            str(index + 1),
+            row.get("scope", ""),
+            row.get("name", ""),
+            row.get("wca_id", ""),
+            row.get("country_id", ""),
+        ]
+        x = left
+        for col_index, ((_, width), value) in enumerate(zip(widths, values)):
+            cell_text = _fit_text_to_width(
+                draw,
+                value,
+                fonts.body_small,
+                width - 36 * SCALE,
+            )
+            _draw_cell_text(
+                draw,
+                cell_text,
+                (x, current_top, x + width, current_top + row_height),
+                fonts.body_small,
+                ACCENT if col_index == 3 else TEXT_COLOR,
+                "left" if col_index == 2 else "center",
+                pad_x=18 * SCALE,
+            )
+            x += width
+        draw.line((left, current_top + row_height, left + total_width, current_top + row_height), fill=DIVIDER, width=1 * SCALE)
+        current_top += row_height
+
+
+def _build_nemesis_rows(
+    nemesis_data: dict,
+    display_limit: int,
+) -> tuple[list[dict[str, str]], bool]:
+    sources = [
+        ("地区", nemesis_data.get("country_list", [])),
+        ("洲内其他", nemesis_data.get("continent_list", [])),
+        ("世界其他", nemesis_data.get("world_list", [])),
+    ]
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for scope, people in sources:
+        if not isinstance(people, list):
+            continue
+        for person in people:
+            if not isinstance(person, dict):
+                continue
+            wca_id = str(person.get("wca_id", "")).strip()
+            name = str(person.get("name", "")).strip()
+            dedupe_key = wca_id or name
+            if not dedupe_key or dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            rows.append(
+                {
+                    "scope": scope,
+                    "name": name or "未知",
+                    "wca_id": wca_id,
+                    "country_id": str(person.get("country_id", "")).strip(),
+                }
+            )
+
+    limit = max(0, int(display_limit or 0))
+    if limit and len(rows) > limit:
+        return rows[:limit], True
+    return rows, False
+
+
 def _draw_cell_text(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -351,6 +537,29 @@ def _draw_cell_text(
     else:
         x = x1 + (x2 - x1 - text_w) / 2
     draw.text((x, y), text, font=font, fill=fill)
+
+
+def _fit_text_to_width(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    max_width: int,
+) -> str:
+    text = str(text or "")
+    if not text:
+        return ""
+    bbox = draw.textbbox((0, 0), text, font=font)
+    if bbox[2] - bbox[0] <= max_width:
+        return text
+    ellipsis = "…"
+    current = ""
+    for char in text:
+        candidate = current + char + ellipsis
+        bbox = draw.textbbox((0, 0), candidate, font=font)
+        if bbox[2] - bbox[0] > max_width:
+            return current + ellipsis if current else ellipsis
+        current += char
+    return current
 
 
 def _draw_rounded_panel(

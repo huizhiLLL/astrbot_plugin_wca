@@ -10,7 +10,7 @@
   <p>
     <img alt="AstrBot Plugin" src="https://img.shields.io/badge/AstrBot-Plugin-2F80ED?style=for-the-badge" />
     <img alt="WCA API" src="https://img.shields.io/badge/WCA-API-EA4335?style=for-the-badge" />
-    <img alt="Version v1.1.11" src="https://img.shields.io/badge/version-v1.1.11-16A34A?style=for-the-badge" />
+    <img alt="Version v1.1.12" src="https://img.shields.io/badge/version-v1.1.12-16A34A?style=for-the-badge" />
   </p>
 </div>
 
@@ -21,7 +21,7 @@
 - **成绩查询**：查询 WCA 官方成绩、one 平台成绩，并可生成 WCA 个人成绩图
 - **成绩对比**：支持 WCA PK、one PK、同一选手 WCA/one 双平台对比、双平台 PR 与 PRPK
 - **绑定识别**：支持 QQ 绑定 WCAID / oneID，常用查询与 PK 命令可自动识别发送者或被艾特用户
-- **辅助查询**：支持宿敌统计、宿敌数据库版本查询、近期中国 WCA 比赛查询
+- **辅助查询**：支持宿敌统计、宿敌列表图、宿敌数据库版本查询、近期中国 WCA 比赛查询
 
 ## 指令
 
@@ -38,7 +38,8 @@
 | `/prpk` | 比较两位选手的双平台 PR 成绩；同名可手动指定双方 WCAID/oneID | `/prpk @某人`、`/prpk @甲 @乙`、`/prpk 李华 张伟` |
 | `/wca绑定` | 将当前 QQ 和 WCAID 绑定 | `/wca绑定 2026ZHANG01` |
 | `/one绑定` | 将当前 QQ 和 oneID 绑定 | `/one绑定 1234` |
-| `/宿敌` | 查询宿敌 | `/宿敌`、`/宿敌 @某人`、`/宿敌 2026ZHANG01` |
+| `/宿敌` | 查询宿敌统计，宿敌数不多时附带明细 | `/宿敌`、`/宿敌 @某人`、`/宿敌 2026ZHANG01` |
+| `/宿敌ls` | 生成宿敌选手列表图片，地区优先且最多展示 100 人 | `/宿敌ls`、`/宿敌ls @某人`、`/宿敌ls 2026ZHANG01` |
 | `/版本` | 查询宿敌后端当前数据库导出日期 | `/版本` |
 | `/近期比赛` | 查询近期在中国举办的 WCA 比赛 | `/近期比赛` |
 
@@ -49,7 +50,7 @@
 ## 绑定说明
 
 - `/wca绑定 <WCAID或姓名>` 绑定当前 QQ 与 WCA 选手；`/one绑定 <oneID或用户名>` 绑定当前 QQ 与 one 用户。
-- 单人命令支持自查与艾特查询：`/wca`、`/wcapic`、`/宿敌`、`/one`、`/pr` 可直接使用绑定；带 `@某人` 时查询对方绑定信息。
+- 单人命令支持自查与艾特查询：`/wca`、`/wcapic`、`/宿敌`、`/宿敌ls`、`/one`、`/pr` 可直接使用绑定；带 `@某人` 时查询对方绑定信息。
 - 双人命令支持艾特 PK：`/wcapk`、`/onepk`、`/prpk` 只艾特一个人时默认“自己 vs 对方”，艾特两个人时比较这两个被艾特用户。
 - 双平台命令 `/pr`、`/prpk` 要求目标用户同时绑定 WCAID 与 oneID。
 - 绑定信息保存在插件数据目录下的 `wca_bindings.json` 和 `one_bindings.json`。
@@ -60,6 +61,11 @@
 
 <details>
 <summary>查看历史版本</summary>
+
+### v1.1.12
+
+- 新增 `/宿敌ls` 指令，用图片列出具体宿敌选手，按地区、洲内其他、世界其他优先展示，最多展示 100 人
+- `/宿敌` 调用宿敌接口时显式限制明细阈值为 10，保持原有文字输出规则
 
 ### v1.1.11
 
