@@ -30,6 +30,7 @@ class WCAPicService:
         self.lookup = WCAPersonLookupService(query)
 
     async def handle(self, event: AstrMessageEvent):
+        event.should_call_llm(True)
         search_input, missing_binding, qq_id = resolve_bound_wca_search_input(
             event, self.bindings
         )

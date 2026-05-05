@@ -17,6 +17,7 @@ class WCACubeHelpService:
         self.reaction_feedback = reaction_feedback
 
     async def handle(self, event: AstrMessageEvent):
+        event.should_call_llm(True)
         commands_data = prepare_cube_help_data()
         try:
             await self.reaction_feedback.send_processing_reaction(event)

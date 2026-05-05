@@ -103,6 +103,7 @@ class WCANemesisService:
             yield result
 
     async def handle_list(self, event: AstrMessageEvent):
+        event.should_call_llm(True)
         async for result in self._handle(event, image_list=True):
             yield result
 
