@@ -21,16 +21,20 @@ class WCACubeHelpService:
         try:
             await self.reaction_feedback.send_processing_reaction(event)
             image_bytes = render_cube_help_card(commands_data)
-            logger.warning(
-                f"cube帮助 准备发送图片: size={len(image_bytes)} bytes"
-            )
+        except Exception as render_err:
+            logger.error(f"cube帮助 图片渲染失败: {render_err}")
+            help_text = format_cube_help_text(commands_data)
+            yield event.plain_result(help_text).use_t2i(False)
+            return
+
+        logger.warning(
+            f"cube帮助 准备发送图片: size={len(image_bytes)} bytes"
+        )
+        try:
             await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
         except Exception as send_err:
-            logger.error(f"cube帮助 图片渲染或发送失败: {send_err}")
-            help_text = format_cube_help_text(commands_data)
-            yield event.plain_result(
-                "哎呀，图片发送失败啦，先为您展示文字版吧：\n\n" + help_text
-            ).use_t2i(False)
+            logger.warning(f"cube帮助 图片发送回执异常: {send_err}")
+            return
 
 
 def prepare_cube_help_data() -> dict[str, object]:

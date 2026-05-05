@@ -110,11 +110,8 @@ class WCAPicService:
                 try:
                     await self._send_image(event, image_bytes)
                 except Exception as send_err:
-                    logger.error(f"WCA PIC 发送失败: {send_err}")
-                    pic_text = format_person_records_for_pic(records_data)
-                    yield event.plain_result(
-                        "哎呀，图片发送失败啦，先为您展示文字版吧：\n\n" + pic_text
-                    ).use_t2i(False)
+                    logger.warning(f"WCA PIC 图片发送回执异常: {send_err}")
+                    return
             except asyncio.TimeoutError:
                 logger.error("WCA PIC 渲染超时")
                 pic_text = format_person_records_for_pic(records_data)

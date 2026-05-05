@@ -171,13 +171,23 @@ class WCANemesisService:
                 return
 
             if image_list:
-                image_bytes = render_wca_nemesis_list_card(
-                    person_info=pinfo,
-                    person_id=person_id,
-                    nemesis_data=nemesis_data,
-                    display_limit=self.IMAGE_LIST_LIMIT,
-                )
-                await event.send(event.chain_result([Comp.Image.fromBytes(image_bytes)]))
+                try:
+                    image_bytes = render_wca_nemesis_list_card(
+                        person_info=pinfo,
+                        person_id=person_id,
+                        nemesis_data=nemesis_data,
+                        display_limit=self.IMAGE_LIST_LIMIT,
+                    )
+                except Exception as render_err:
+                    logger.error(f"宿敌列表图片渲染失败: {render_err}")
+                    return
+
+                try:
+                    await event.send(
+                        event.chain_result([Comp.Image.fromBytes(image_bytes)])
+                    )
+                except Exception as send_err:
+                    logger.warning(f"宿敌列表图片发送回执异常: {send_err}")
                 return
 
             text = self._format_nemesis_result(
