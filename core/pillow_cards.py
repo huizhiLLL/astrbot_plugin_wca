@@ -26,29 +26,29 @@ FALLBACK_FONT_FILES = {
         "NotoSans-Regular.ttf",
     ],
     "thai": [
+        "NotoSansThai-Regular.ttf",
+        "NotoSansThaiUI-Regular.ttf",
         "Loma.otf",
         "tahoma.ttf",
         "leelawad.ttf",
         "FreeSans.ttf",
-        "NotoSansThai-Regular.ttf",
-        "NotoSansThaiUI-Regular.ttf",
         "Garuda.ttf",
     ],
     "korean": [
-        "wqy-zenhei.ttc",
-        "malgun.ttf",
-        "NotoSansKR-Regular.otf",
         "NotoSansCJK-Regular.ttc",
         "NotoSansCJKkr-Regular.ttc",
+        "NotoSansKR-Regular.otf",
+        "wqy-zenhei.ttc",
+        "malgun.ttf",
         "NotoSansCJKkr-Regular.otf",
     ],
     "japanese": [
+        "NotoSansCJK-Regular.ttc",
+        "NotoSansCJKjp-Regular.ttc",
+        "NotoSansJP-Regular.otf",
         "wqy-zenhei.ttc",
         "YuGothR.ttc",
         "meiryo.ttc",
-        "NotoSansJP-Regular.otf",
-        "NotoSansCJK-Regular.ttc",
-        "NotoSansCJKjp-Regular.ttc",
         "NotoSansCJKjp-Regular.otf",
     ],
 }
@@ -132,7 +132,7 @@ class FontStack:
             return self.korean
         if 0x3040 <= code <= 0x30FF:
             return self.japanese
-        if _is_latin_extended(char):
+        if code > 0x7F and _is_latin_extended(char):
             return self.latin
         return self.primary
 
