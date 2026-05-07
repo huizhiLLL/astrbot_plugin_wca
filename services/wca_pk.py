@@ -15,7 +15,7 @@ from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
 
-SELF_PK_MESSAGE = "哎呀 你是想和自己pk吗~"
+SELF_PK_MESSAGE = "哎呀，不能和同一位选手 PK 哦~"
 
 
 @dataclass

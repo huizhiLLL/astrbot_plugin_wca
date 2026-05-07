@@ -26,7 +26,7 @@ from ..core.wca_query import WCAQuery
 
 
 NUMBER_FORMAT_EVENTS: set[str] = {"333fm"}
-SELF_PK_MESSAGE = "哎呀 你是想和自己pk吗~"
+SELF_PK_MESSAGE = "哎呀，不能和同一位选手 PK 哦~"
 ONE_EVENT_TO_WCA: dict[str, str] = {
     "333": "333",
     "三阶": "333",
