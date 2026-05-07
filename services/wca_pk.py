@@ -15,6 +15,9 @@ from ..core.wca_person_lookup import WCAPersonLookupService
 from ..core.wca_query import WCAQuery
 
 
+SELF_PK_MESSAGE = "哎呀 你是想和自己pk吗~"
+
+
 @dataclass
 class PlayerRecord:
     person: Dict[str, Any]
@@ -104,6 +107,11 @@ class WCAPKService:
             if s2 == "ambiguous":
                 return "", f"选手 {kw2} 有多个同名结果，请使用 WCAID 再试哦~"
             return "", f"哎呀，没找到选手 {kw2} 哦，请检查一下名字或 WCAID 呀~"
+
+        p1_id = self._extract_wca_id(p1)
+        p2_id = self._extract_wca_id(p2)
+        if p1_id and p2_id and p1_id == p2_id:
+            return SELF_PK_MESSAGE, None
 
         r1 = await self._build_player_record(p1)
         r2 = await self._build_player_record(p2)
@@ -216,6 +224,11 @@ class WCAPKService:
             result_text += f"\n\n {score_a} : {score_b} \n竟然是平局呢~"
         return result_text, None
 
+    @staticmethod
+    def _extract_wca_id(person: Dict[str, Any]) -> str:
+        person_info = person.get("person", person)
+        return str(person_info.get("wca_id") or "").strip()
+
     async def handle(self, event: AstrMessageEvent):
         args = strip_first_command_token(event.message_str)
         resolved_pair, binding_error = self._resolve_bound_pair(event)
@@ -239,6 +252,9 @@ class WCAPKService:
             yield event.plain_result(
                 "参数不足哦\n用法: /wcapk <选手1> <选手2>\n示例: /wcapk 2026LIHU01 2009ZEMD01"
             ).use_t2i(False)
+            return
+        if p1.casefold() == p2.casefold():
+            yield event.plain_result(SELF_PK_MESSAGE).use_t2i(False)
             return
 
         await self.reaction_feedback.send_processing_reaction(event)

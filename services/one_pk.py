@@ -8,6 +8,7 @@ from ..core.wca_bindings import extract_mentioned_qqs, strip_first_command_token
 
 
 NUMBER_FORMAT_EVENT_IDS = {16}
+SELF_PK_MESSAGE = "哎呀 你是想和自己pk吗~"
 
 
 class OnePKService:
@@ -123,6 +124,8 @@ class OnePKService:
 
         if user1_id is None or user2_id is None:
             return "", "无法确认 one 选手身份哦~"
+        if user1_id == user2_id:
+            return SELF_PK_MESSAGE, None
 
         resp1 = await self.one_client.get_personal_records(user1_id)
         resp2 = await self.one_client.get_personal_records(user2_id)
@@ -209,6 +212,9 @@ class OnePKService:
             yield event.plain_result(
                 "参数不足哦\n用法: /onepk <选手1> <选手2>\n示例: /onepk 1234 5678"
             ).use_t2i(False)
+            return
+        if p1.casefold() == p2.casefold():
+            yield event.plain_result(SELF_PK_MESSAGE).use_t2i(False)
             return
 
         await self.reaction_feedback.send_processing_reaction(event)

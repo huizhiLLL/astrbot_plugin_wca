@@ -26,6 +26,7 @@ from ..core.wca_query import WCAQuery
 
 
 NUMBER_FORMAT_EVENTS: set[str] = {"333fm"}
+SELF_PK_MESSAGE = "哎呀 你是想和自己pk吗~"
 ONE_EVENT_TO_WCA: dict[str, str] = {
     "333": "333",
     "三阶": "333",
@@ -482,8 +483,6 @@ class WCAPRPKService:
             yield event.plain_result(binding_error).use_t2i(False)
             return
 
-        await self.reaction_feedback.send_processing_reaction(event)
-
         if bound_inputs:
             player1 = await self._resolve_player(
                 bound_inputs[0][0],
@@ -541,6 +540,13 @@ class WCAPRPKService:
 
         w1_name = player1.wca_person.get("name", player1.wca_person.get("wca_id", ""))
         w2_name = player2.wca_person.get("name", player2.wca_person.get("wca_id", ""))
+        w1_id = str(player1.wca_person.get("wca_id") or "").strip()
+        w2_id = str(player2.wca_person.get("wca_id") or "").strip()
+        if (w1_id and w1_id == w2_id) or player1.one_user_id == player2.one_user_id:
+            yield event.plain_result(SELF_PK_MESSAGE).use_t2i(False)
+            return
+
+        await self.reaction_feedback.send_processing_reaction(event)
 
         try:
             w1_records = await self.query.get_person_best_records(

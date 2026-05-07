@@ -26,7 +26,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.12")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.13")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
