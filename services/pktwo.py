@@ -124,9 +124,7 @@ class PKTwoService:
         if not all_events:
             return ""
 
-        display_name = (
-            f"{wca_name} ({one_user_name})" if one_user_name and one_user_name != wca_name else wca_name
-        )
+        display_name = wca_name
         lines = [f"{display_name}\n{wca_id} VS {one_user_id}\n"]
         score_wca = 0
         score_one = 0
