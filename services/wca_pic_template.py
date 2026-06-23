@@ -100,7 +100,6 @@ def build_person_card_template_data(records_data: dict) -> dict:
     return {
         "name": person.get("name") or "未知",
         "avatar_url": person.get("avatar_thumb_url") or "",
-        "flag_text": _flag_text(country_iso2),
         "country_name": country_name,
         "wca_id": person.get("wca_id") or "-",
         "gender": _gender_cn(person.get("gender", "")),
@@ -215,13 +214,4 @@ def _rank_text(value: object) -> str:
 def _rank_class(value: object) -> str:
     if isinstance(value, int) and 0 < value < 100:
         return "rank-top"
-    return ""
-
-
-def _flag_text(iso2: str) -> str:
-    iso2 = iso2.strip().upper()
-    if iso2 == "CN":
-        return "🇨🇳"
-    if len(iso2) == 2 and iso2.isalpha():
-        return f"[{iso2}]"
     return ""

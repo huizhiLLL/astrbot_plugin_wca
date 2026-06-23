@@ -347,7 +347,7 @@ def render_wca_person_card(
         content_w,
     )
     meta_values = [
-        f"{str(data.get('flag_text', '')).strip()} {str(data.get('country_name', '-')).strip()}".strip(),
+        str(data.get("country_name", "-")).strip() or "-",
         str(data.get("wca_id", "-")),
         str(data.get("gender", "-")),
         str(data.get("competition_count", "-")),
