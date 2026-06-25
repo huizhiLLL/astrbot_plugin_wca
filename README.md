@@ -10,7 +10,7 @@
   <p>
     <img alt="AstrBot Plugin" src="https://img.shields.io/badge/AstrBot-Plugin-2F80ED?style=for-the-badge" />
     <img alt="WCA API" src="https://img.shields.io/badge/WCA-API-EA4335?style=for-the-badge" />
-    <img alt="Version v1.1.14" src="https://img.shields.io/badge/version-v1.1.14-16A34A?style=for-the-badge" />
+    <img alt="Version v1.1.15" src="https://img.shields.io/badge/version-v1.1.15-16A34A?style=for-the-badge" />
   </p>
 </div>
 
@@ -61,6 +61,10 @@
 
 <details>
 <summary>查看历史版本</summary>
+
+### v1.1.15
+
+- 补充 one 平台项目 21、22 的显示名称：齿轮、二重奏
 
 ### v1.1.14
 
