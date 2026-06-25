@@ -17,6 +17,7 @@ EVENT_ID_MAP: dict[str, str] = {
     "pyram": "py",
     "skewb": "sk",
     "sq1": "sq1",
+    "fto": "FTO",
     "444bf": "444bf",
     "555bf": "555bf",
     "333mbf": "333mbf",
@@ -39,6 +40,7 @@ EVENT_FORMAT_MAP: dict[str, str] = {
     "pyram": "time",
     "skewb": "time",
     "sq1": "time",
+    "fto": "time",
     "444bf": "time",
     "555bf": "time",
     "333mbf": "multi",
@@ -61,10 +63,11 @@ EVENT_ORDER: dict[str, int] = {
     "pyram": 12,
     "skewb": 13,
     "sq1": 14,
-    "444bf": 15,
-    "555bf": 16,
-    "333mbf": 17,
-    "333ft": 18,
+    "fto": 15,
+    "444bf": 16,
+    "555bf": 17,
+    "333mbf": 18,
+    "333ft": 19,
 }
 
 

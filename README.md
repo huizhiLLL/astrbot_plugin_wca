@@ -10,7 +10,7 @@
   <p>
     <img alt="AstrBot Plugin" src="https://img.shields.io/badge/AstrBot-Plugin-2F80ED?style=for-the-badge" />
     <img alt="WCA API" src="https://img.shields.io/badge/WCA-API-EA4335?style=for-the-badge" />
-    <img alt="Version v1.1.13" src="https://img.shields.io/badge/version-v1.1.13-16A34A?style=for-the-badge" />
+    <img alt="Version v1.1.14" src="https://img.shields.io/badge/version-v1.1.14-16A34A?style=for-the-badge" />
   </p>
 </div>
 
@@ -61,6 +61,11 @@
 
 <details>
 <summary>查看历史版本</summary>
+
+### v1.1.14
+
+- 适配 WCA 新增项目 FTO，补充 WCA 项目名称、排序和图片展示映射
+- `/pr`、`/prpk`、`/pktwo` 跨平台成绩合并支持识别 WCA `fto` 与 one 平台 `FTO`
 
 ### v1.1.13
 

@@ -15,6 +15,7 @@ EVENT_CN_MAP: dict[str, str] = {
     "pyram": "金字塔",
     "skewb": "斜转",
     "sq1": "SQ1",
+    "fto": "FTO",
     "444bf": "四盲",
     "555bf": "五盲",
     "333mbf": "多盲",
