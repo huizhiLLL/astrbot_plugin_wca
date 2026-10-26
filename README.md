@@ -29,6 +29,7 @@
 |------|------|------|
 | `/cube帮助` | 展示所有命令 | `/cube帮助` |
 | `/wca` | 查询 wca 个人记录| `/wca 2026ZHANG01` |
+| `/wcalive` | 查询包含近期未公示成绩的 WCA 个人记录 | `/wcalive 甘瑞嘉`、`/wcalive 2026GANR01` |
 | `/one` | 查询 one 平台个人记录 | `/one`、`/one @某人`、`/one 1234` |
 | `/wcapic` | 生成个人最佳记录图片 | `/wcapic`、`/wcapic @某人`、`/wcapic 张伟` |
 | `/wcapk` | 比较两位选手的 wca 成绩 | `/wcapk @某人`、`/wcapk @甲 @乙`、`/wcapk 张伟 李华` |
@@ -45,7 +46,7 @@
 
 ## 外部依赖
 
-- WCA 官方 API、one 平台 API、宿敌接口 `wca.huizhi.pro`、cubing.com 近期比赛接口
+- WCA 官方 API、CubeRoot 实时成绩 API、one 平台 API、宿敌接口 `wca.huizhi.pro`、cubing.com 近期比赛接口
 
 ## 绑定说明
 
@@ -61,6 +62,11 @@
 
 <details>
 <summary>查看历史版本</summary>
+
+### v1.1.16
+
+- 新增 `/wcalive`，合并 WCA 官方历史成绩与 CubeRoot 近期未公示成绩。
+- 直播成绩按选手所有近期比赛轮次参与个人最佳计算，并补充实时 WR/CR/NR 排名。
 
 ### v1.1.15
 

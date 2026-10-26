@@ -44,6 +44,7 @@ def prepare_cube_help_data() -> dict[str, object]:
         "subtitle": "WCA 与 one 相关命令一览",
         "commands": [
             {"name": "/wca", "desc": "查询 WCA 个人成绩", "example": "/wca 李华 或 /wca @某人"},
+            {"name": "/wcalive", "desc": "查询包含近期未公示成绩的 WCA 个人成绩", "example": "/wcalive 李华 或 /wcalive @某人"},
             {"name": "/one", "desc": "查询 one 平台个人成绩", "example": "/one 李华 或 /one 1234"},
             {"name": "/wca绑定", "desc": "绑定你的 WCAID 到 QQ", "example": "/wca绑定 2026LIHU01"},
             {"name": "/one绑定", "desc": "绑定你的 oneID 到 QQ", "example": "/one绑定 1234"},

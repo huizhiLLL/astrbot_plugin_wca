@@ -3,6 +3,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 from .clients.one_api import OneRecordHandler, PersonalRecordAPIClient
+from .clients.cuberoot_live_api import CubeRootLiveAPIClient
 from .core.one_bindings import OneBindingStore
 from .core.reaction_feedback import CommandReactionFeedback
 from .core.wca_bindings import WCABindingStore
@@ -11,6 +12,7 @@ from .core.wca_query import (
     WCACommandService,
     WCABindCommandService,
 )
+from .core.wca_live_query import WCALiveCommandService, WCALiveQuery
 from .services.wca_cross_platform import (
     OneBindCommandService,
     WCAOneService,
@@ -26,7 +28,7 @@ from .services.pktwo import PKTwoService
 from .services.wca_recent_competitions import RecentCompetitionsService
 
 
-@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.13")
+@register("wca", "huizhiLLL", "WCA成绩查询插件", "1.1.16")
 class WCAPlugin(Star):
     """WCA 与 one 成绩查询插件"""
 
@@ -37,6 +39,7 @@ class WCAPlugin(Star):
         self.wca_bindings = WCABindingStore()
         self.one_bindings = OneBindingStore()
         self.wca_command_service: WCACommandService | None = None
+        self.wca_live_command_service: WCALiveCommandService | None = None
         self.wca_bind_command: WCABindCommandService | None = None
         self.one_bind_command: OneBindCommandService | None = None
         self.wca_pic: WCAPicService | None = None
@@ -65,6 +68,10 @@ class WCAPlugin(Star):
             self.wca_query = WCAQuery()
             self.wca_command_service = WCACommandService(
                 self.wca_query, self.wca_bindings
+            )
+            self.wca_live_command_service = WCALiveCommandService(
+                WCALiveQuery(self.wca_query, CubeRootLiveAPIClient()),
+                self.wca_bindings,
             )
             self.wca_bind_command = WCABindCommandService(
                 self.wca_query, self.wca_bindings
@@ -160,6 +167,17 @@ class WCAPlugin(Star):
             ).use_t2i(False)
             return
         async for result in self.wca_command_service.handle(event):
+            yield result
+
+    @filter.command("wcalive", alias={"WCALIVE"})
+    async def wca_live_command(self, event: AstrMessageEvent):
+        """查询包含近期未公示成绩的 WCA 选手个人记录"""
+        if not self.wca_live_command_service:
+            yield event.plain_result(
+                "哎呀，初始化 WCA 实时查询出错啦，请稍后再试哦！"
+            ).use_t2i(False)
+            return
+        async for result in self.wca_live_command_service.handle(event):
             yield result
 
     @filter.command("wca绑定", alias={"WCA绑定"})
