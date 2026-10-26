@@ -11,7 +11,8 @@ from ..core.reaction_feedback import CommandReactionFeedback
 class RecentCompetitionsService:
     """近期比赛查询服务（通过 cubing.com API）"""
     
-    API_BASE_URL = "https://cubing.com/api/v0/competition"
+    # 粗饼新版站点使用 api.cubing.com/competitions；旧接口已失效。
+    API_BASE_URL = "https://api.cubing.com/competitions"
     
     def __init__(
         self,
@@ -36,10 +37,19 @@ class RecentCompetitionsService:
             API 返回的比赛列表
         """
         try:
-            url = f"{self.API_BASE_URL}?year={year}&type={type}"
+            params = {"type": type, "status": "announced", "skip": 0, "take": 100}
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                async with session.get(
+                    self.API_BASE_URL,
+                    params=params,
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "astrbot_plugin_wca/1.1",
+                        "Referer": "https://cubing.com/competition",
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as response:
                     if response.status != 200:
                         logger.error(f"API 请求失败，状态码: {response.status}")
                         return []
@@ -57,7 +67,7 @@ class RecentCompetitionsService:
                         logger.error("API 返回的数据格式错误，期望字典")
                         return []
                     
-                    if data.get("status") != 0:
+                    if "status" in data and data.get("status") != 0:
                         logger.error(f"API 返回错误: {data.get('message', 'Unknown error')}")
                         return []
                     
@@ -107,26 +117,29 @@ class RecentCompetitionsService:
                 if not isinstance(loc, dict):
                     continue
                 region = loc.get("region")
-                if region in ("China", "中国"):
+                if region in ("China", "中国") or loc.get("regionIso2") == "CN":
                     is_china = True
                     break
                 
                 # 省份/城市信息
                 province = loc.get("province", "")
                 city = loc.get("city", "")
+                province_name = loc.get("provinceName", "")
+                city_name = loc.get("cityName", "")
                 
                 # 任意字段包含中文即认为是中国
-                if (isinstance(province, str) and chinese_char_re.search(province)) or (
-                    isinstance(city, str) and chinese_char_re.search(city)
+                if any(
+                    isinstance(value, str) and chinese_char_re.search(value)
+                    for value in (province, city, province_name, city_name)
                 ):
                     is_china = True
                     break
                 
                 # 英文省份匹配常见关键词
-                if isinstance(province, str) and any(k in province for k in china_keywords):
+                if isinstance(province_name, str) and any(k in province_name for k in china_keywords):
                     is_china = True
                     break
-                if isinstance(city, str) and any(k in city for k in china_keywords):
+                if isinstance(city_name, str) and any(k in city_name for k in china_keywords):
                     is_china = True
                     break
             
@@ -176,9 +189,8 @@ class RecentCompetitionsService:
                 if not isinstance(comp, dict):
                     continue
                 
-                date_info = comp.get("date", {})
+                date_info = comp.get("date")
                 if isinstance(date_info, dict):
-                    # 获取开始/结束时间戳
                     start_ts = date_info.get("from", 0) or 0
                     end_ts = date_info.get("to", start_ts) or start_ts
                     
@@ -193,8 +205,16 @@ class RecentCompetitionsService:
                     if end_date >= today_date:
                         upcoming_competitions.append(comp)
                 else:
-                    # 如果没有日期信息，保守地包含
-                    upcoming_competitions.append(comp)
+                    # 新接口使用 ISO 日期，且单日比赛的 endDate 可能为 null。
+                    try:
+                        start_date = date.fromisoformat(str(comp["startDate"])[:10])
+                        end_date = date.fromisoformat(
+                            str(comp.get("endDate") or comp["startDate"])[:10]
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if end_date >= today_date:
+                        upcoming_competitions.append(comp)
             
             # 格式化数据
             formatted_competitions = []
@@ -205,7 +225,7 @@ class RecentCompetitionsService:
                     continue
                 
                 # 获取比赛名称（中文）
-                name = comp.get("name", "未知比赛")
+                name = comp.get("nameZh") or comp.get("name", "未知比赛")
                 
                 # 获取地点信息（优先使用中文字段）
                 locations = comp.get("locations", [])
@@ -216,7 +236,7 @@ class RecentCompetitionsService:
                     # 确保 first_location 是字典类型
                     if isinstance(first_location, dict):
                         # 城市名称：优先使用中文
-                        city_name_zh = first_location.get("city_name_zh", "")
+                        city_name_zh = first_location.get("city_name_zh", "") or first_location.get("cityName", "")
                         city_name_en = first_location.get("city_name", "")
                         city_name = city_name_zh or city_name_en
                         
@@ -226,18 +246,23 @@ class RecentCompetitionsService:
                             province_name_zh = province.get("name_zh", "")
                             province_name_en = province.get("name", "")
                             province_name = province_name_zh or province_name_en
+                        if not province_name:
+                            province_name = first_location.get("provinceName", "")
                 
                 # 获取日期信息
-                date_info = comp.get("date", {})
+                date_info = comp.get("date")
                 if isinstance(date_info, dict):
                     start_timestamp = date_info.get("from", 0)
                     end_timestamp = date_info.get("to", start_timestamp)
                 else:
-                    start_timestamp = 0
-                    end_timestamp = 0
+                    start_timestamp = end_timestamp = 0
                 
-                start_date_str = self._parse_timestamp_to_date_str(start_timestamp)
-                end_date_str = self._parse_timestamp_to_date_str(end_timestamp)
+                if comp.get("startDate"):
+                    start_date_str = str(comp["startDate"])[:10]
+                    end_date_str = str(comp.get("endDate") or comp["startDate"])[:10]
+                else:
+                    start_date_str = self._parse_timestamp_to_date_str(start_timestamp)
+                    end_date_str = self._parse_timestamp_to_date_str(end_timestamp)
                 
                 formatted_comp = {
                     "id": comp.get("id"),

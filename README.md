@@ -10,7 +10,7 @@
   <p>
     <img alt="AstrBot Plugin" src="https://img.shields.io/badge/AstrBot-Plugin-2F80ED?style=for-the-badge" />
     <img alt="WCA API" src="https://img.shields.io/badge/WCA-API-EA4335?style=for-the-badge" />
-    <img alt="Version v1.1.15" src="https://img.shields.io/badge/version-v1.1.15-16A34A?style=for-the-badge" />
+    <img alt="Version v1.1.16" src="https://img.shields.io/badge/version-v1.1.16-16A34A?style=for-the-badge" />
   </p>
 </div>
 
@@ -63,10 +63,11 @@
 <details>
 <summary>查看历史版本</summary>
 
-### v1.1.16
+### v1.1.17
 
 - 新增 `/wcalive`，合并 WCA 官方历史成绩与 CubeRoot 近期未公示成绩。
 - 直播成绩按选手所有近期比赛轮次参与个人最佳计算，并补充实时 WR/CR/NR 排名。
+- `/wca` 中国选手的文本排名改为选择 `WR`、`CR`、`NR` 中数值最优的一项；排名数值相同时按 `WR`、`CR`、`NR` 的优先级展示，第一名仍只显示排名前缀。
 
 ### v1.1.15
 

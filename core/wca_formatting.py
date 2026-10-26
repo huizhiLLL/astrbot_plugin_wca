@@ -240,7 +240,24 @@ def _rank_label(
     country = str(country_id or "").strip().upper()
 
     if country == "CN":
-        return _format_rank("NR", country_rank, 200)
+        ranked_candidates: list[tuple[int, str]] = []
+        for prefix, rank_value in (
+            ("WR", world_rank),
+            ("CR", continent_rank),
+            ("NR", country_rank),
+        ):
+            if isinstance(rank_value, int) and 0 < rank_value <= 200:
+                ranked_candidates.append((rank_value, prefix))
+
+        if not ranked_candidates:
+            return "-"
+
+        # 元组只按排名值取最小值；候选项的原始顺序负责在并列时保证
+        # WR > CR > NR 的展示优先级。
+        best_rank = min(rank for rank, _ in ranked_candidates)
+        for rank, prefix in ranked_candidates:
+            if rank == best_rank:
+                return _format_rank(prefix, rank, 200)
 
     for prefix, rank_value in (
         ("WR", world_rank),
