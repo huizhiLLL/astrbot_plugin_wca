@@ -132,12 +132,12 @@ class WCALiveQuery:
         official: dict[str, Any] | None,
         live_rows: list[dict[str, Any]],
     ) -> dict[str, Any] | None:
-        field = "best" if result_type == "single" else "average"
         candidates: list[int] = []
-        if official and isinstance(official.get(field), int) and official[field] > 0:
-            candidates.append(official[field])
+        if official and isinstance(official.get("best"), int) and official["best"] > 0:
+            candidates.append(official["best"])
+        live_field = "best" if result_type == "single" else "average"
         for row in live_rows:
-            value = row.get(field)
+            value = row.get(live_field)
             if isinstance(value, int) and value > 0:
                 candidates.append(value)
         if not candidates:
